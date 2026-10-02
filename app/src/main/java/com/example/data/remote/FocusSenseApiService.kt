@@ -102,6 +102,11 @@ data class HealthResponse(
     val timestamp: Long
 )
 
+data class AppBlockToggleDto(
+    val package_name: String,
+    val is_blocked: Boolean
+)
+
 interface FocusSenseApiService {
 
     @GET("/api/health")
@@ -148,6 +153,23 @@ interface FocusSenseApiService {
 
     @GET("/api/location/{child_id}/latest")
     suspend fun getLatestLocation(@Path("child_id") childId: String): Response<LocationPointEntity>
+
+    @POST("/api/devices/{child_id}/apps/sync")
+    suspend fun syncInstalledApps(
+        @Path("child_id") childId: String,
+        @Body apps: List<com.example.data.model.InstalledAppEntity>
+    ): Response<Map<String, Any>>
+
+    @GET("/api/devices/{child_id}/apps")
+    suspend fun getInstalledApps(
+        @Path("child_id") childId: String
+    ): Response<List<com.example.data.model.InstalledAppEntity>>
+
+    @POST("/api/devices/{child_id}/apps/toggle-block")
+    suspend fun toggleAppBlock(
+        @Path("child_id") childId: String,
+        @Body payload: AppBlockToggleDto
+    ): Response<Map<String, Any>>
 }
 
 object ApiClient {

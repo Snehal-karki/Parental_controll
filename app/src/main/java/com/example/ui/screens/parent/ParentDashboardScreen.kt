@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Warning
@@ -66,6 +67,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -131,6 +133,9 @@ fun ParentDashboardScreen(
     serverUrl: String = "https://focussense-api.onrender.com",
     onUpdateServerUrl: (String) -> Unit = {},
     onTestServer: suspend () -> Pair<Boolean, String> = { Pair(false, "Not tested") },
+    installedApps: List<com.example.data.model.InstalledAppEntity> = emptyList(),
+    onToggleAppBlock: (String, Boolean) -> Unit = { _, _ -> },
+    onRefreshInstalledApps: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -218,8 +223,11 @@ fun ParentDashboardScreen(
                 1 -> ScheduleManagerTab(
                     childName = childName,
                     rules = scheduleRules,
+                    installedApps = installedApps,
                     onToggleRule = onToggleRule,
                     onDeleteRule = onDeleteRule,
+                    onToggleAppBlock = onToggleAppBlock,
+                    onRefreshApps = onRefreshInstalledApps,
                     onAddNewClick = { showAddRuleDialog = true }
                 )
                 2 -> LiveLocationMapTab(
@@ -250,6 +258,7 @@ fun ParentDashboardScreen(
 
     if (showAddRuleDialog) {
         AddScheduleRuleDialog(
+            installedApps = installedApps,
             onDismiss = { showAddRuleDialog = false },
             onSaveRule = { name, category, start, end, days, apps ->
                 onAddRule(name, category, start, end, days, apps)
@@ -560,10 +569,35 @@ private fun ActivityLogCard(
 private fun ScheduleManagerTab(
     childName: String,
     rules: List<ScheduleRuleEntity>,
+    installedApps: List<com.example.data.model.InstalledAppEntity>,
     onToggleRule: (String, Boolean) -> Unit,
     onDeleteRule: (String) -> Unit,
+    onToggleAppBlock: (String, Boolean) -> Unit,
+    onRefreshApps: () -> Unit,
     onAddNewClick: () -> Unit
 ) {
+    var appCategoryFilter by remember { mutableStateOf("All") }
+    var appSearchQuery by remember { mutableStateOf("") }
+
+    val filteredApps = remember(installedApps, appCategoryFilter, appSearchQuery) {
+        installedApps.filter { app ->
+            val matchesFilter = when (appCategoryFilter) {
+                "All" -> true
+                "Blocked" -> app.isBlocked
+                "Social" -> app.category.contains("Social", ignoreCase = true)
+                "Gaming" -> app.category.contains("Gaming", ignoreCase = true)
+                "Streaming" -> app.category.contains("Streaming", ignoreCase = true) || app.category.contains("Video", ignoreCase = true)
+                "Browsers" -> app.category.contains("Browser", ignoreCase = true)
+                else -> true
+            }
+            val matchesSearch = if (appSearchQuery.isBlank()) true else {
+                app.appName.contains(appSearchQuery, ignoreCase = true) ||
+                app.packageName.contains(appSearchQuery, ignoreCase = true)
+            }
+            matchesFilter && matchesSearch
+        }
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -571,19 +605,235 @@ private fun ScheduleManagerTab(
         contentPadding = PaddingValues(top = 16.dp, bottom = 80.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // Header
         item {
             Column {
-                Text(
-                    text = "$childName's Focus & Habit Timetable",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Automated habit building: specific distracting apps are restricted during scheduled windows.",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "$childName's App Limits & Schedules",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Real installed apps detected on child phone and automated curfew windows.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Button(
+                        onClick = onAddNewClick,
+                        colors = ButtonDefaults.buttonColors(containerColor = IndigoPrimary),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Add Rule", fontSize = 12.sp)
+                    }
+                }
             }
+        }
+
+        // Section 1: Real Installed Apps & Instant App Locker
+        item {
+            ElevatedCard(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("child_installed_apps_card")
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = IndigoPrimary.copy(alpha = 0.15f),
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.PhoneAndroid,
+                                        contentDescription = null,
+                                        tint = IndigoPrimary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "Installed Apps (${installedApps.size})",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                                Text(
+                                    text = "Live scanned packages on $childName's phone",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = onRefreshApps,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh Apps",
+                                tint = IndigoPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Search Input
+                    OutlinedTextField(
+                        value = appSearchQuery,
+                        onValueChange = { appSearchQuery = it },
+                        placeholder = { Text("Search child apps...", fontSize = 12.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Filter Chips
+                    val categories = listOf("All", "Blocked", "Social", "Gaming", "Streaming", "Browsers")
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        categories.forEach { cat ->
+                            val isSelected = appCategoryFilter == cat
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) IndigoPrimary else MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier.clickable { appCategoryFilter = cat }
+                            ) {
+                                Text(
+                                    text = if (cat == "Blocked") "Blocked (${installedApps.count { it.isBlocked }})" else cat,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (installedApps.isEmpty()) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "No launcher apps scanned yet from $childName's device.",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Button(
+                                    onClick = onRefreshApps,
+                                    colors = ButtonDefaults.buttonColors(containerColor = IndigoPrimary),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    Text("Scan Installed Apps Now", fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            filteredApps.forEach { appItem ->
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (appItem.isBlocked) CoralDangerBg else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = appItem.appName,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 14.sp,
+                                                    color = if (appItem.isBlocked) CoralDanger else MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = if (appItem.isBlocked) CoralDanger.copy(alpha = 0.2f) else EmeraldSafe.copy(alpha = 0.2f)
+                                                ) {
+                                                    Text(
+                                                        text = if (appItem.isBlocked) "BLOCKED" else "ALLOWED",
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (appItem.isBlocked) CoralDanger else EmeraldSafe,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                            }
+                                            Text(
+                                                text = "${appItem.category} • ${appItem.packageName}",
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1
+                                            )
+                                        }
+
+                                        Switch(
+                                            checked = appItem.isBlocked,
+                                            onCheckedChange = { isChecked ->
+                                                onToggleAppBlock(appItem.packageName, isChecked)
+                                            },
+                                            colors = SwitchDefaults.colors(
+                                                checkedThumbColor = CoralDanger,
+                                                checkedTrackColor = CoralDanger.copy(alpha = 0.3f)
+                                            ),
+                                            modifier = Modifier.testTag("app_block_switch_${appItem.packageName}")
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Section 2: Active Timetables & Curfews
+        item {
+            Text(
+                text = "Active Timetables & Curfews (${rules.size})",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
 
         if (rules.isEmpty()) {
@@ -607,12 +857,12 @@ private fun ScheduleManagerTab(
                         )
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = "No Schedule Rules Yet",
+                            text = "No Schedule Curfews Set",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
+                            fontSize = 15.sp
                         )
                         Text(
-                            text = "Add homework, bedtime curfew, or study periods to restrict distracting apps.",
+                            text = "Set homework, bedtime curfew, or study periods to pause apps automatically.",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -621,7 +871,7 @@ private fun ScheduleManagerTab(
                             onClick = onAddNewClick,
                             colors = ButtonDefaults.buttonColors(containerColor = IndigoPrimary)
                         ) {
-                            Text("Create First Rule")
+                            Text("Create Curfew Rule")
                         }
                     }
                 }
@@ -630,6 +880,7 @@ private fun ScheduleManagerTab(
             items(rules, key = { it.ruleId }) { rule ->
                 ScheduleRuleCard(
                     rule = rule,
+                    installedApps = installedApps,
                     onToggle = { onToggleRule(rule.ruleId, it) },
                     onDelete = { onDeleteRule(rule.ruleId) }
                 )
@@ -642,6 +893,7 @@ private fun ScheduleManagerTab(
 @Composable
 private fun ScheduleRuleCard(
     rule: ScheduleRuleEntity,
+    installedApps: List<com.example.data.model.InstalledAppEntity> = emptyList(),
     onToggle: (Boolean) -> Unit,
     onDelete: () -> Unit
 ) {
@@ -705,15 +957,21 @@ private fun ScheduleRuleCard(
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 restrictedApps.forEach { pkg ->
+                    val foundApp = installedApps.find { it.packageName.equals(pkg, ignoreCase = true) }
                     val simpleName = when {
+                        pkg == "*" || pkg == "all" -> "All Apps (*)"
+                        foundApp != null -> foundApp.appName
                         pkg.contains("youtube") -> "YouTube"
+                        pkg.contains("chrome") -> "Google Chrome"
                         pkg.contains("tiktok") || pkg.contains("musically") -> "TikTok"
                         pkg.contains("roblox") -> "Roblox"
                         pkg.contains("instagram") -> "Instagram"
                         pkg.contains("discord") -> "Discord"
-                        pkg.contains("netflix") -> "Netflix"
                         pkg.contains("snapchat") -> "Snapchat"
-                        else -> pkg.substringAfterLast('.')
+                        pkg.contains("settings") -> "Settings"
+                        pkg.contains("camera") -> "Camera"
+                        pkg.contains("calculator") -> "Calculator"
+                        else -> pkg.substringAfterLast('.').replaceFirstChar { it.uppercase() }
                     }
                     Surface(
                         shape = RoundedCornerShape(8.dp),

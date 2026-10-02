@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Psychology
@@ -41,6 +42,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.repository.ActiveAppBlockInfo
 import com.example.ui.theme.AmberWarning
+import com.example.ui.theme.CoralDanger
+import com.example.ui.theme.EmeraldSafe
 import com.example.ui.theme.IndigoDark
 import com.example.ui.theme.IndigoPrimary
 import com.example.ui.theme.Navy900
@@ -52,14 +55,19 @@ fun AppRestrictionOverlay(
     onDismiss: () -> Unit,
     onParentOverrideRequested: () -> Unit
 ) {
+    val isBlocked = blockInfo.isBlocked
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(
+                    colors = if (isBlocked) listOf(
                         Navy900.copy(alpha = 0.95f),
                         IndigoDark.copy(alpha = 0.98f)
+                    ) else listOf(
+                        Color(0xFF064E3B).copy(alpha = 0.95f),
+                        Color(0xFF0F172A).copy(alpha = 0.98f)
                     )
                 )
             )
@@ -84,13 +92,13 @@ fun AppRestrictionOverlay(
                     modifier = Modifier
                         .size(76.dp)
                         .clip(CircleShape)
-                        .background(IndigoPrimary.copy(alpha = 0.2f)),
+                        .background(if (isBlocked) IndigoPrimary.copy(alpha = 0.2f) else EmeraldSafe.copy(alpha = 0.2f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.HourglassTop,
-                        contentDescription = "Focus Shield",
-                        tint = IndigoPrimary,
+                        imageVector = if (isBlocked) Icons.Default.HourglassTop else Icons.Default.CheckCircle,
+                        contentDescription = if (isBlocked) "Focus Shield" else "Access Allowed",
+                        tint = if (isBlocked) IndigoPrimary else EmeraldSafe,
                         modifier = Modifier.size(42.dp)
                     )
                 }
@@ -98,7 +106,7 @@ fun AppRestrictionOverlay(
                 Spacer(modifier = Modifier.height(18.dp))
 
                 Text(
-                    text = "Focus Mode Active",
+                    text = if (isBlocked) "Focus Mode Active" else "App Access Allowed",
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
@@ -108,11 +116,11 @@ fun AppRestrictionOverlay(
 
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = AmberWarning.copy(alpha = 0.15f)
+                    color = if (isBlocked) AmberWarning.copy(alpha = 0.15f) else EmeraldSafe.copy(alpha = 0.15f)
                 ) {
                     Text(
-                        text = "Scheduled Routine: ${blockInfo.ruleName}",
-                        color = AmberWarning,
+                        text = if (isBlocked) "Curfew: ${blockInfo.ruleName}" else "Curfew Check: Permitted",
+                        color = if (isBlocked) AmberWarning else EmeraldSafe,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
@@ -122,7 +130,11 @@ fun AppRestrictionOverlay(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "${blockInfo.restrictedAppName} is paused during this time window to help you build great focus habits.",
+                    text = if (isBlocked) {
+                        "${blockInfo.restrictedAppName} is currently restricted by your parent schedule to build great focus habits."
+                    } else {
+                        "${blockInfo.restrictedAppName} is currently allowed. No active schedule curfew or instant lock is restricting it right now."
+                    },
                     fontSize = 14.sp,
                     color = Color(0xFFCBD5E1),
                     textAlign = TextAlign.Center,
@@ -143,14 +155,14 @@ fun AppRestrictionOverlay(
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.School,
+                            imageVector = if (isBlocked) Icons.Default.School else Icons.Default.CheckCircle,
                             contentDescription = null,
                             tint = Color.White,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Unlocks at ${blockInfo.endTime}",
+                            text = if (isBlocked) "Curfew window ends at ${blockInfo.endTime}" else "Status: Open to launch",
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
                             fontSize = 14.sp
@@ -162,33 +174,35 @@ fun AppRestrictionOverlay(
 
                 Button(
                     onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColors(containerColor = IndigoPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (isBlocked) IndigoPrimary else EmeraldSafe),
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp)
                         .testTag("dismiss_restriction_button")
                 ) {
-                    Text("Return to Study", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(if (isBlocked) "Return to Study" else "OK, Got It", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                if (isBlocked) {
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                OutlinedButton(
-                    onClick = onParentOverrideRequested,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp)
-                        .testTag("parent_override_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Parent Unlock (PIN)", fontSize = 13.sp)
+                    OutlinedButton(
+                        onClick = onParentOverrideRequested,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("parent_override_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Parent Unlock (PIN)", fontSize = 13.sp)
+                    }
                 }
             }
         }

@@ -46,4 +46,46 @@ class ExampleRobolectricTest {
     assertFalse("Should not be flagged", result.isFlagged)
     assertEquals("Safe", result.threatCategory)
   }
+
+  @Test
+  fun `schedule rule blocks restricted package during active hours`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val repository = com.example.data.repository.FocusSenseRepository(context)
+
+    // Add an all-day rule restricting Chrome
+    val rule = com.example.data.model.ScheduleRuleEntity(
+      ruleId = "test-curfew-1",
+      childId = "child-default",
+      ruleName = "Study Focus",
+      category = "Homework",
+      startTime = "00:00",
+      endTime = "23:59",
+      dayOfWeek = "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
+      restrictedPackages = "com.android.chrome",
+      isActive = true
+    )
+    repository.addScheduleRule(rule)
+
+    val restriction = repository.checkAppRestriction("child-default", "com.android.chrome")
+    assertTrue("com.android.chrome should be blocked during active curfew", restriction.isBlocked)
+    assertEquals("Study Focus", restriction.ruleName)
+
+    val allowedRestriction = repository.checkAppRestriction("child-default", "com.example.unrestricted")
+    assertFalse("Unrestricted package should not be blocked", allowedRestriction.isBlocked)
+  }
+
+  @Test
+  fun `instant app lock blocks app immediately`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val repository = com.example.data.repository.FocusSenseRepository(context)
+
+    repository.toggleAppBlock("child-default", "com.google.android.youtube", true)
+
+    assertTrue("Should be blocked by instant lock", repository.isPackageBlockedSync("com.google.android.youtube"))
+    val check = repository.checkAppRestriction("child-default", "com.google.android.youtube")
+    assertTrue("checkAppRestriction should return blocked", check.isBlocked)
+
+    repository.toggleAppBlock("child-default", "com.google.android.youtube", false)
+    assertFalse("Should be unblocked after toggle off", repository.isPackageBlockedSync("com.google.android.youtube"))
+  }
 }

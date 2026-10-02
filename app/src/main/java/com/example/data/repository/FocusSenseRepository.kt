@@ -8,9 +8,11 @@ import com.example.data.local.FocusSenseDatabase
 import com.example.data.model.ActivityLogEntity
 import com.example.data.model.DeviceEntity
 import com.example.data.model.FamilyGroupEntity
+import com.example.data.model.InstalledAppEntity
 import com.example.data.model.LocationPointEntity
 import com.example.data.model.ScheduleRuleEntity
 import com.example.data.model.UserEntity
+import com.example.util.InstalledAppScanner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -27,6 +29,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 sealed class SentinelEvent {
     data class ContentFlagged(val log: ActivityLogEntity, val threatResult: ThreatAnalysisResult) : SentinelEvent()
@@ -100,6 +103,32 @@ class FocusSenseRepository(context: Context) {
         }
     }
 
+    // In-Memory App Blocking Cache for 0ms Latency in AccessibilityService
+    private val _instantBlockedPackages = MutableStateFlow<Set<String>>(emptySet())
+    val instantBlockedPackages: StateFlow<Set<String>> = _instantBlockedPackages.asStateFlow()
+
+    private val _temporaryUnlockedPackages = ConcurrentHashMap<String, Long>()
+
+    fun isPackageBlockedSync(packageName: String): Boolean {
+        val lower = packageName.lowercase()
+        val tempExpiry = _temporaryUnlockedPackages[lower] ?: 0L
+        if (tempExpiry > System.currentTimeMillis()) {
+            return false
+        }
+        return _instantBlockedPackages.value.any { it.equals(lower, ignoreCase = true) }
+    }
+
+    fun temporarilyUnlockApp(packageName: String, minutes: Int = 15) {
+        val lower = packageName.lowercase()
+        _temporaryUnlockedPackages[lower] = System.currentTimeMillis() + (minutes * 60 * 1000L)
+    }
+
+    fun isPackageTemporarilyUnlocked(packageName: String): Boolean {
+        val lower = packageName.lowercase()
+        val tempExpiry = _temporaryUnlockedPackages[lower] ?: 0L
+        return tempExpiry > System.currentTimeMillis()
+    }
+
     init {
         // Restore active user session from local preferences
         val savedUserId = prefs.getString("saved_user_id", null)
@@ -113,6 +142,14 @@ class FocusSenseRepository(context: Context) {
                     }
                 }
             }
+        }
+
+        // Initialize in-memory blocked apps cache from DB
+        scope.launch {
+            try {
+                val blocked = db.installedAppDao().getBlockedPackageNamesSync()
+                _instantBlockedPackages.value = blocked.map { it.lowercase() }.toSet()
+            } catch (_: Exception) {}
         }
     }
 
@@ -513,9 +550,37 @@ class FocusSenseRepository(context: Context) {
         log
     }
 
-    // 2. Scheduled App Blocking Engine
+    // 2. Scheduled & Instant App Blocking Engine
     suspend fun checkAppRestriction(childId: String, packageName: String): ActiveAppBlockInfo = withContext(Dispatchers.IO) {
-        val rules = db.scheduleRuleDao().getRulesForChildSync(childId)
+        val lowerPkg = packageName.lowercase()
+
+        // 1. Temporary PIN Override Check
+        if (isPackageTemporarilyUnlocked(lowerPkg)) {
+            return@withContext ActiveAppBlockInfo(isBlocked = false)
+        }
+
+        // 2. Instant Parent Block List Check
+        val isInstantBlocked = _instantBlockedPackages.value.any { it.equals(lowerPkg, ignoreCase = true) }
+        if (isInstantBlocked) {
+            return@withContext ActiveAppBlockInfo(
+                isBlocked = true,
+                ruleName = "Parent Instant Lock",
+                category = "Instant Restriction",
+                endTime = "Until Unlocked by Parent",
+                restrictedAppName = packageName
+            )
+        }
+
+        // 3. Scheduled Curfew Rules Check
+        val effectiveChildId = childId.ifBlank { _selectedChildId.value.ifBlank { _currentUser.value?.userId ?: "child-default" } }
+        val childRules = if (effectiveChildId.isNotBlank()) {
+            db.scheduleRuleDao().getRulesForChildSync(effectiveChildId)
+        } else {
+            emptyList()
+        }
+        val allActive = db.scheduleRuleDao().getAllActiveRulesSync()
+        val rules = (childRules + allActive).distinctBy { it.ruleId }
+
         val now = Calendar.getInstance()
         val currentHour = now.get(Calendar.HOUR_OF_DAY)
         val currentMinute = now.get(Calendar.MINUTE)
@@ -528,8 +593,15 @@ class FocusSenseRepository(context: Context) {
         for (rule in rules) {
             if (!rule.isActive) continue
 
-            // Check days
-            if (!rule.dayOfWeek.contains(currentDayName, ignoreCase = true)) continue
+            // Check days (allows "Daily", "All", "Everyday", empty, or comma-separated days)
+            val daySpec = rule.dayOfWeek.trim()
+            val dayMatches = daySpec.isBlank() ||
+                    daySpec.contains("All", ignoreCase = true) ||
+                    daySpec.contains("Daily", ignoreCase = true) ||
+                    daySpec.contains("Everyday", ignoreCase = true) ||
+                    daySpec.contains(currentDayName, ignoreCase = true)
+
+            if (!dayMatches) continue
 
             // Parse start and end time
             val startParts = rule.startTime.split(":")
@@ -539,22 +611,32 @@ class FocusSenseRepository(context: Context) {
             val startMinutes = (startParts[0].toIntOrNull() ?: 0) * 60 + (startParts[1].toIntOrNull() ?: 0)
             val endMinutes = (endParts[0].toIntOrNull() ?: 0) * 60 + (endParts[1].toIntOrNull() ?: 0)
 
-            val isTimeMatch = if (startMinutes <= endMinutes) {
-                currentTimeMinutes in startMinutes..endMinutes
-            } else {
-                // Overnight rule (e.g. 21:00 to 06:30)
-                currentTimeMinutes >= startMinutes || currentTimeMinutes <= endMinutes
+            val isTimeMatch = when {
+                // If 24/7 or full day (00:00 to 23:59 or 00:00 to 00:00)
+                (startMinutes == 0 && (endMinutes >= 1439 || endMinutes == 0)) -> true
+                startMinutes == endMinutes -> true
+                startMinutes < endMinutes -> currentTimeMinutes in startMinutes..endMinutes
+                startMinutes > endMinutes -> currentTimeMinutes >= startMinutes || currentTimeMinutes <= endMinutes
+                else -> true
             }
 
             if (isTimeMatch) {
-                val packages = rule.restrictedPackages.split(",").map { it.trim() }
-                if (packages.contains(packageName) || packages.contains("*")) {
+                val packages = rule.restrictedPackages.split(",").map { it.trim().lowercase() }
+                val matchesApp = packages.any { pkgPattern ->
+                    pkgPattern == "*" ||
+                    pkgPattern == "all" ||
+                    pkgPattern == lowerPkg ||
+                    (pkgPattern.isNotBlank() && lowerPkg.contains(pkgPattern))
+                }
+
+                if (matchesApp) {
+                    val displayAppName = rule.ruleName.substringAfter("Parent App Lock: ").takeIf { it.isNotBlank() } ?: packageName
                     return@withContext ActiveAppBlockInfo(
                         isBlocked = true,
                         ruleName = rule.ruleName,
                         category = rule.category,
                         endTime = rule.endTime,
-                        restrictedAppName = packageName
+                        restrictedAppName = displayAppName
                     )
                 }
             }
@@ -634,7 +716,7 @@ class FocusSenseRepository(context: Context) {
         totalSynced
     }
 
-    // 5. Parent Administrative Actions
+    // 5. Parent Administrative Actions & App Management
     suspend fun acknowledgeAlert(logId: String) = withContext(Dispatchers.IO) {
         db.activityLogDao().markAcknowledged(logId)
     }
@@ -645,18 +727,158 @@ class FocusSenseRepository(context: Context) {
 
     suspend fun addScheduleRule(rule: ScheduleRuleEntity) = withContext(Dispatchers.IO) {
         db.scheduleRuleDao().insert(rule)
+        try {
+            val api = com.example.data.remote.ApiClient.getService(_serverUrl.value)
+            api.saveSchedule(rule)
+        } catch (_: Exception) {}
     }
 
     suspend fun updateScheduleRule(rule: ScheduleRuleEntity) = withContext(Dispatchers.IO) {
         db.scheduleRuleDao().update(rule)
+        try {
+            val api = com.example.data.remote.ApiClient.getService(_serverUrl.value)
+            api.saveSchedule(rule)
+        } catch (_: Exception) {}
     }
 
     suspend fun deleteScheduleRule(ruleId: String) = withContext(Dispatchers.IO) {
         db.scheduleRuleDao().delete(ruleId)
+        try {
+            val api = com.example.data.remote.ApiClient.getService(_serverUrl.value)
+            api.deleteSchedule(ruleId)
+        } catch (_: Exception) {}
     }
 
     suspend fun toggleRuleActive(ruleId: String, isActive: Boolean) = withContext(Dispatchers.IO) {
         db.scheduleRuleDao().toggleRuleActive(ruleId, isActive)
+        val rule = db.scheduleRuleDao().getAllActiveRulesSync().find { it.ruleId == ruleId }
+        if (rule != null) {
+            try {
+                val api = com.example.data.remote.ApiClient.getService(_serverUrl.value)
+                api.saveSchedule(rule.copy(isActive = isActive))
+            } catch (_: Exception) {}
+        }
+    }
+
+    suspend fun syncSchedulesWithServer(childId: String) = withContext(Dispatchers.IO) {
+        val effectiveChildId = childId.ifBlank { _selectedChildId.value.ifBlank { "child-default" } }
+        try {
+            val api = com.example.data.remote.ApiClient.getService(_serverUrl.value)
+            val resp = api.getSchedules(effectiveChildId)
+            if (resp.isSuccessful && resp.body() != null) {
+                db.scheduleRuleDao().insertAll(resp.body()!!)
+            }
+        } catch (_: Exception) {}
+    }
+
+    // Installed Applications & Instant App Locker
+    fun getInstalledApps(childId: String): Flow<List<InstalledAppEntity>> {
+        val effectiveChildId = childId.ifBlank { _selectedChildId.value }
+        return if (effectiveChildId.isNotBlank()) {
+            db.installedAppDao().getInstalledApps(effectiveChildId)
+        } else {
+            db.installedAppDao().getAllInstalledApps()
+        }
+    }
+
+    suspend fun scanAndSyncInstalledApps(context: Context, childId: String) = withContext(Dispatchers.IO) {
+        val effectiveChildId = childId.ifBlank { _selectedChildId.value.ifBlank { "child-default" } }
+        val role = _currentUser.value?.role ?: "parent"
+
+        if (role == "child") {
+            // Child Phone: Scan local hardware packages and push to server
+            val scannedApps = InstalledAppScanner.getInstalledLauncherApps(context, effectiveChildId)
+            val existingBlocked = db.installedAppDao().getBlockedPackageNamesSync().toSet()
+            val mergedApps = scannedApps.map { app ->
+                if (existingBlocked.contains(app.packageName)) app.copy(isBlocked = true) else app
+            }
+
+            db.installedAppDao().insertAll(mergedApps)
+
+            try {
+                val api = com.example.data.remote.ApiClient.getService(_serverUrl.value)
+                api.syncInstalledApps(effectiveChildId, mergedApps)
+            } catch (_: Exception) {}
+        } else {
+            // Parent Phone: Fetch the child's real installed apps from server
+            var remoteFound = false
+            try {
+                val api = com.example.data.remote.ApiClient.getService(_serverUrl.value)
+                val remoteResp = api.getInstalledApps(effectiveChildId)
+                if (remoteResp.isSuccessful && !remoteResp.body().isNullOrEmpty()) {
+                    db.installedAppDao().insertAll(remoteResp.body()!!)
+                    val remoteBlocked = remoteResp.body()!!.filter { it.isBlocked }.map { it.packageName.lowercase() }.toSet()
+                    _instantBlockedPackages.value = _instantBlockedPackages.value + remoteBlocked
+                    remoteFound = true
+                }
+            } catch (_: Exception) {}
+
+            // If running in single-device test mode or no server apps yet, scan device to provide real installed apps
+            if (!remoteFound) {
+                val localAppsCount = db.installedAppDao().getInstalledAppsSync(effectiveChildId).size
+                if (localAppsCount == 0) {
+                    val scannedApps = InstalledAppScanner.getInstalledLauncherApps(context, effectiveChildId)
+                    if (scannedApps.isNotEmpty()) {
+                        db.installedAppDao().insertAll(scannedApps)
+                        try {
+                            val api = com.example.data.remote.ApiClient.getService(_serverUrl.value)
+                            api.syncInstalledApps(effectiveChildId, scannedApps)
+                        } catch (_: Exception) {}
+                    }
+                }
+            }
+        }
+    }
+
+    suspend fun toggleAppBlock(childId: String, packageName: String, isBlocked: Boolean) = withContext(Dispatchers.IO) {
+        val effectiveChildId = childId.ifBlank { _selectedChildId.value.ifBlank { "child-default" } }
+        val lowerPkg = packageName.lowercase()
+
+        // 1. Update Room DB
+        db.installedAppDao().updateAppBlockStatus(packageName, isBlocked)
+        db.installedAppDao().updateAppBlockStatusForChild(effectiveChildId, packageName, isBlocked)
+
+        // 2. Update In-Memory Instant Block Cache
+        _instantBlockedPackages.value = if (isBlocked) {
+            _instantBlockedPackages.value + lowerPkg
+        } else {
+            _instantBlockedPackages.value - lowerPkg
+        }
+
+        // 3. Create or Remove Instant Rule in schedule_rules
+        val instantRuleId = "instant-block-${lowerPkg.replace('.', '-')}"
+        val appName = packageName.substringAfterLast('.').replaceFirstChar { it.uppercase() }
+        val rule = ScheduleRuleEntity(
+            ruleId = instantRuleId,
+            childId = effectiveChildId,
+            ruleName = "Parent App Lock: $appName",
+            category = "Instant Block",
+            startTime = "00:00",
+            endTime = "23:59",
+            dayOfWeek = "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
+            restrictedPackages = packageName,
+            isActive = isBlocked
+        )
+
+        if (isBlocked) {
+            db.scheduleRuleDao().insert(rule)
+        } else {
+            db.scheduleRuleDao().delete(instantRuleId)
+        }
+
+        // 4. Push to Server
+        try {
+            val api = com.example.data.remote.ApiClient.getService(_serverUrl.value)
+            api.toggleAppBlock(
+                childId = effectiveChildId,
+                payload = com.example.data.remote.AppBlockToggleDto(package_name = packageName, is_blocked = isBlocked)
+            )
+            if (isBlocked) {
+                api.saveSchedule(rule)
+            } else {
+                api.deleteSchedule(instantRuleId)
+            }
+        } catch (_: Exception) {}
     }
 
     suspend fun updateParentPin(userId: String, newPin: String) = withContext(Dispatchers.IO) {

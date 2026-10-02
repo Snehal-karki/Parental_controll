@@ -73,7 +73,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.ActivityLogEntity
 import com.example.data.model.LocationPointEntity
-import com.example.data.model.PREDEFINED_RESTRICTED_APPS
+import com.example.data.model.RestrictedAppInfo
 import com.example.data.model.ScheduleRuleEntity
 import com.example.data.model.UserEntity
 import com.example.ui.components.ThreatCategoryBadge
@@ -921,6 +921,20 @@ private fun ChildFocusShieldTab(
     rules: List<ScheduleRuleEntity>,
     onLaunchRestrictedApp: (pkg: String, name: String) -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val detectedApps = remember {
+        val scanned = com.example.util.InstalledAppScanner.getInstalledLauncherApps(context, "child-default")
+        scanned.map {
+            RestrictedAppInfo(
+                packageName = it.packageName,
+                appName = it.appName,
+                iconName = "app",
+                category = it.category,
+                isInstalledOnDevice = true
+            )
+        }
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -945,13 +959,13 @@ private fun ChildFocusShieldTab(
 
         item {
             Text(
-                text = "Tap any restricted app to simulate opening it:",
+                text = "Tap any installed app to test the blocking shield:",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold
             )
         }
 
-        items(PREDEFINED_RESTRICTED_APPS) { app ->
+        items(detectedApps) { app ->
             Card(
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),

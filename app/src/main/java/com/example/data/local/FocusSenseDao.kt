@@ -138,8 +138,44 @@ interface ScheduleRuleDao {
     @Query("SELECT * FROM schedule_rules WHERE childId = :childId")
     suspend fun getRulesForChildSync(childId: String): List<ScheduleRuleEntity>
 
+    @Query("SELECT * FROM schedule_rules WHERE isActive = 1")
+    suspend fun getAllActiveRulesSync(): List<ScheduleRuleEntity>
+
     @Query("UPDATE schedule_rules SET isActive = :isActive WHERE ruleId = :ruleId")
     suspend fun toggleRuleActive(ruleId: String, isActive: Boolean)
+}
+
+@Dao
+interface InstalledAppDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(apps: List<com.example.data.model.InstalledAppEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(app: com.example.data.model.InstalledAppEntity)
+
+    @Query("SELECT * FROM installed_apps WHERE childId = :childId ORDER BY appName ASC")
+    fun getInstalledApps(childId: String): Flow<List<com.example.data.model.InstalledAppEntity>>
+
+    @Query("SELECT * FROM installed_apps WHERE childId = :childId ORDER BY appName ASC")
+    suspend fun getInstalledAppsSync(childId: String): List<com.example.data.model.InstalledAppEntity>
+
+    @Query("SELECT * FROM installed_apps ORDER BY appName ASC")
+    fun getAllInstalledApps(): Flow<List<com.example.data.model.InstalledAppEntity>>
+
+    @Query("SELECT * FROM installed_apps ORDER BY appName ASC")
+    suspend fun getAllInstalledAppsSync(): List<com.example.data.model.InstalledAppEntity>
+
+    @Query("UPDATE installed_apps SET isBlocked = :isBlocked WHERE packageName = :packageName")
+    suspend fun updateAppBlockStatus(packageName: String, isBlocked: Boolean)
+
+    @Query("UPDATE installed_apps SET isBlocked = :isBlocked WHERE childId = :childId AND packageName = :packageName")
+    suspend fun updateAppBlockStatusForChild(childId: String, packageName: String, isBlocked: Boolean)
+
+    @Query("SELECT * FROM installed_apps WHERE isBlocked = 1")
+    suspend fun getAllBlockedAppsSync(): List<com.example.data.model.InstalledAppEntity>
+
+    @Query("SELECT packageName FROM installed_apps WHERE isBlocked = 1")
+    suspend fun getBlockedPackageNamesSync(): List<String>
 }
 
 @Dao

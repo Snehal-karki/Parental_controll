@@ -80,7 +80,20 @@ data class RestrictedAppInfo(
     val packageName: String,
     val appName: String,
     val iconName: String,
-    val category: String
+    val category: String,
+    val isInstalledOnDevice: Boolean = false
+)
+
+@Entity(tableName = "installed_apps")
+data class InstalledAppEntity(
+    @PrimaryKey val id: String, // childId + "_" + packageName
+    val childId: String,
+    val packageName: String,
+    val appName: String,
+    val category: String,
+    val isBlocked: Boolean = false,
+    val isSystemApp: Boolean = false,
+    val lastUpdated: Long = System.currentTimeMillis()
 )
 
 val PREDEFINED_RESTRICTED_APPS = listOf(

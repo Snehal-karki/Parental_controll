@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -78,6 +79,10 @@ class FocusSenseViewModel(
         .flatMapLatest { childId -> repository.getRulesForChild(childId) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val installedApps: StateFlow<List<com.example.data.model.InstalledAppEntity>> = selectedChildId
+        .flatMapLatest { childId -> repository.getInstalledApps(childId) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val latestLocation: StateFlow<LocationPointEntity?> = selectedChildId
         .flatMapLatest { childId -> repository.getLatestLocationForChild(childId) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -102,6 +107,16 @@ class FocusSenseViewModel(
 
     private val _authError = MutableStateFlow<String?>(null)
     val authError: StateFlow<String?> = _authError.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            repository.childrenUsers.collectLatest { children ->
+                if (children.isNotEmpty() && repository.selectedChildId.value.isBlank()) {
+                    repository.setSelectedChild(children.first().userId)
+                }
+            }
+        }
+    }
 
     fun clearAuthError() {
         _authError.value = null
@@ -211,9 +226,12 @@ class FocusSenseViewModel(
         restrictedPackages: String
     ) {
         viewModelScope.launch {
+            val effectiveChildId = selectedChildId.value.ifBlank {
+                childrenUsers.value.firstOrNull()?.userId ?: "child-default"
+            }
             val rule = ScheduleRuleEntity(
                 ruleId = UUID.randomUUID().toString(),
-                childId = selectedChildId.value,
+                childId = effectiveChildId,
                 ruleName = name,
                 category = category,
                 startTime = startTime,
@@ -241,6 +259,24 @@ class FocusSenseViewModel(
     fun toggleRuleActive(ruleId: String, isActive: Boolean) {
         viewModelScope.launch {
             repository.toggleRuleActive(ruleId, isActive)
+        }
+    }
+
+    fun refreshInstalledApps(context: android.content.Context) {
+        viewModelScope.launch {
+            repository.scanAndSyncInstalledApps(context, selectedChildId.value)
+        }
+    }
+
+    fun toggleAppBlock(packageName: String, isBlocked: Boolean) {
+        viewModelScope.launch {
+            repository.toggleAppBlock(selectedChildId.value, packageName, isBlocked)
+        }
+    }
+
+    fun syncSchedules() {
+        viewModelScope.launch {
+            repository.syncSchedulesWithServer(selectedChildId.value)
         }
     }
 
@@ -284,16 +320,18 @@ class FocusSenseViewModel(
 
     fun simulateRestrictedAppLaunch(packageName: String, appName: String) {
         viewModelScope.launch {
-            val restriction = repository.checkAppRestriction(selectedChildId.value, packageName)
+            val childId = selectedChildId.value.ifBlank {
+                childrenUsers.value.firstOrNull()?.userId ?: "child-default"
+            }
+            val restriction = repository.checkAppRestriction(childId, packageName)
             if (restriction.isBlocked) {
                 _activeRestrictionOverlay.value = restriction.copy(restrictedAppName = appName)
             } else {
-                // If not currently blocked by time, test-launch with mock notice
                 _activeRestrictionOverlay.value = ActiveAppBlockInfo(
-                    isBlocked = true,
-                    ruleName = "Simulated Focus Block Test",
-                    category = "Study Mode",
-                    endTime = "18:00",
+                    isBlocked = false,
+                    ruleName = "Access Currently Allowed",
+                    category = "Active Status: Allowed",
+                    endTime = "No Active Curfew Window",
                     restrictedAppName = appName
                 )
             }

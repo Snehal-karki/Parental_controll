@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -60,15 +62,17 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.model.ActivityLogEntity
-import com.example.data.model.PREDEFINED_RESTRICTED_APPS
+import com.example.data.model.RestrictedAppInfo
 import com.example.data.model.ScheduleRuleEntity
 import com.example.ui.components.ThreatCategoryBadge
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CoralDanger
+import com.example.ui.theme.CoralDangerBg
 import com.example.ui.theme.EmeraldSafe
 import com.example.ui.theme.IndigoPrimary
 import java.text.SimpleDateFormat
@@ -193,22 +197,55 @@ fun ParentPinDialog(
 @Composable
 fun AddScheduleRuleDialog(
     existingRule: ScheduleRuleEntity? = null,
+    installedApps: List<com.example.data.model.InstalledAppEntity> = emptyList(),
     onDismiss: () -> Unit,
     onSaveRule: (name: String, category: String, start: String, end: String, days: String, apps: String) -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var ruleName by remember { mutableStateOf(existingRule?.ruleName ?: "Afternoon Study Focus") }
     var category by remember { mutableStateOf(existingRule?.category ?: "Homework") }
     var startTime by remember { mutableStateOf(existingRule?.startTime ?: "15:30") }
     var endTime by remember { mutableStateOf(existingRule?.endTime ?: "17:30") }
     var selectedDays by remember {
-        mutableStateOf(existingRule?.dayOfWeek ?: "Mon,Tue,Wed,Thu,Fri")
+        mutableStateOf(existingRule?.dayOfWeek ?: "Mon,Tue,Wed,Thu,Fri,Sat,Sun")
+    }
+    var appSearchQuery by remember { mutableStateOf("") }
+    var isAllDay by remember {
+        mutableStateOf(existingRule?.startTime == "00:00" && (existingRule?.endTime == "23:59" || existingRule?.endTime == "00:00"))
+    }
+
+    val availableApps: List<RestrictedAppInfo> = remember(installedApps) {
+        val raw = if (installedApps.isNotEmpty()) {
+            installedApps
+        } else {
+            com.example.util.InstalledAppScanner.getInstalledLauncherApps(context, "child-default")
+        }
+        raw.map { app ->
+            RestrictedAppInfo(
+                packageName = app.packageName,
+                appName = app.appName,
+                iconName = "app",
+                category = app.category,
+                isInstalledOnDevice = true
+            )
+        }
     }
 
     val selectedPackages = remember {
         mutableStateListOf<String>().apply {
-            val initial = existingRule?.restrictedPackages?.split(",")?.map { it.trim() }
-                ?: listOf("com.google.android.youtube", "com.zhiliaoapp.musically", "com.roblox.client")
+            val initial = existingRule?.restrictedPackages?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
+                ?: emptyList()
             addAll(initial)
+        }
+    }
+
+    val filteredAvailableApps: List<RestrictedAppInfo> = remember(availableApps, appSearchQuery) {
+        if (appSearchQuery.isBlank()) availableApps else {
+            availableApps.filter { app ->
+                app.appName.contains(appSearchQuery, ignoreCase = true) ||
+                app.packageName.contains(appSearchQuery, ignoreCase = true) ||
+                app.category.contains(appSearchQuery, ignoreCase = true)
+            }
         }
     }
 
@@ -234,7 +271,7 @@ fun AddScheduleRuleDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (existingRule == null) "New Schedule Rule" else "Edit Schedule Rule",
+                        text = if (existingRule == null) "New Schedule Curfew" else "Edit Schedule Rule",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -249,7 +286,7 @@ fun AddScheduleRuleDialog(
                 OutlinedTextField(
                     value = ruleName,
                     onValueChange = { ruleName = it },
-                    label = { Text("Rule Title") },
+                    label = { Text("Curfew Title") },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -259,7 +296,7 @@ fun AddScheduleRuleDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "Category & Purpose",
+                    text = "Category & Focus Mode",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -281,10 +318,61 @@ fun AddScheduleRuleDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
+                // Curfew Time Controls & Presets
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Curfew Window",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(
+                            onClick = {
+                                val cal = java.util.Calendar.getInstance()
+                                val curHour = cal.get(java.util.Calendar.HOUR_OF_DAY)
+                                val curMin = cal.get(java.util.Calendar.MINUTE)
+                                val startH = if (curMin < 10) (curHour - 1 + 24) % 24 else curHour
+                                val startM = if (curMin < 10) 50 else curMin - 10
+                                val endH = (curHour + 2) % 24
+                                startTime = String.format("%02d:%02d", startH, startM)
+                                endTime = String.format("%02d:%02d", endH, curMin)
+                                isAllDay = false
+                            },
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text("Active Now", fontSize = 11.sp, color = IndigoPrimary)
+                        }
+
+                        TextButton(
+                            onClick = {
+                                isAllDay = !isAllDay
+                                if (isAllDay) {
+                                    startTime = "00:00"
+                                    endTime = "23:59"
+                                } else {
+                                    startTime = "15:30"
+                                    endTime = "17:30"
+                                }
+                            },
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(if (isAllDay) "24/7 (On)" else "24/7 (All Day)", fontSize = 11.sp, color = if (isAllDay) EmeraldSafe else IndigoPrimary)
+                        }
+                    }
+                }
+
                 Row(modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(
                         value = startTime,
-                        onValueChange = { startTime = it },
+                        onValueChange = {
+                            startTime = it
+                            isAllDay = false
+                        },
                         label = { Text("Start (HH:mm)") },
                         modifier = Modifier
                             .weight(1f)
@@ -293,7 +381,10 @@ fun AddScheduleRuleDialog(
                     Spacer(modifier = Modifier.width(8.dp))
                     OutlinedTextField(
                         value = endTime,
-                        onValueChange = { endTime = it },
+                        onValueChange = {
+                            endTime = it
+                            isAllDay = false
+                        },
                         label = { Text("End (HH:mm)") },
                         modifier = Modifier
                             .weight(1f)
@@ -301,62 +392,171 @@ fun AddScheduleRuleDialog(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Active Days",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(
+                            onClick = { selectedDays = "Mon,Tue,Wed,Thu,Fri,Sat,Sun" },
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Text("Daily", fontSize = 10.sp)
+                        }
+                        TextButton(
+                            onClick = { selectedDays = "Mon,Tue,Wed,Thu,Fri" },
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Text("Weekdays", fontSize = 10.sp)
+                        }
+                        TextButton(
+                            onClick = { selectedDays = "Sat,Sun" },
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Text("Weekends", fontSize = 10.sp)
+                        }
+                    }
+                }
 
                 OutlinedTextField(
                     value = selectedDays,
                     onValueChange = { selectedDays = it },
-                    label = { Text("Active Days (comma separated)") },
+                    label = { Text("Days (e.g. Mon,Tue,Wed or Daily)") },
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                val selectedCount = selectedPackages.size
+                val totalCount = availableApps.size
+
                 Text(
-                    text = "Restricted Apps During This Period",
+                    text = "Apps to Block on Child Phone ($selectedCount/$totalCount selected)",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "These apps will be blocked by FocusSense overlay while rule is active:",
+                    text = "Real apps detected on child device. When active, opening these apps shows the restriction lock screen.",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                PREDEFINED_RESTRICTED_APPS.forEach { app ->
-                    val isChecked = selectedPackages.contains(app.packageName)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                if (isChecked) selectedPackages.remove(app.packageName)
-                                else selectedPackages.add(app.packageName)
-                            }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                // Search Filter
+                OutlinedTextField(
+                    value = appSearchQuery,
+                    onValueChange = { appSearchQuery = it },
+                    placeholder = { Text("Search installed apps...", fontSize = 12.sp) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = {
+                            selectedPackages.clear()
+                            selectedPackages.addAll(availableApps.map { it.packageName })
+                        }
                     ) {
-                        Checkbox(
-                            checked = isChecked,
-                            onCheckedChange = { checked ->
-                                if (checked) selectedPackages.add(app.packageName)
-                                else selectedPackages.remove(app.packageName)
-                            }
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Column {
+                        Text("Select All ($totalCount)", fontSize = 11.sp)
+                    }
+                    TextButton(
+                        onClick = {
+                            selectedPackages.clear()
+                        }
+                    ) {
+                        Text("Deselect All", fontSize = 11.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                if (availableApps.isEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
                             Text(
-                                text = app.appName,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp
-                            )
-                            Text(
-                                text = app.category,
+                                text = "No installed apps retrieved yet. Open the app on the child phone to sync packages, or use 'Select All' for a general curfew.",
                                 fontSize = 11.sp,
+                                textAlign = TextAlign.Center,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        for (app in filteredAvailableApps) {
+                            val isChecked = selectedPackages.contains(app.packageName)
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isChecked) CoralDangerBg.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (isChecked) selectedPackages.remove(app.packageName)
+                                        else selectedPackages.add(app.packageName)
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(
+                                        checked = isChecked,
+                                        onCheckedChange = { checked ->
+                                            if (checked) selectedPackages.add(app.packageName)
+                                            else selectedPackages.remove(app.packageName)
+                                        }
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = app.appName,
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 13.sp,
+                                            color = if (isChecked) CoralDanger else MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "${app.category} • ${app.packageName}",
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -374,13 +574,19 @@ fun AddScheduleRuleDialog(
                     Button(
                         onClick = {
                             if (ruleName.isNotBlank()) {
+                                val packagesToSave = if (selectedPackages.isNotEmpty()) {
+                                    selectedPackages.joinToString(",")
+                                } else {
+                                    // If no apps selected, default to '*' (all non-essential apps)
+                                    "*"
+                                }
                                 onSaveRule(
                                     ruleName,
                                     category,
                                     startTime,
                                     endTime,
                                     selectedDays,
-                                    selectedPackages.joinToString(",")
+                                    packagesToSave
                                 )
                             }
                         },

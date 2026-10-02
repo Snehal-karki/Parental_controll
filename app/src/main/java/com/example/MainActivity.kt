@@ -38,6 +38,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -111,6 +112,7 @@ fun FocusSenseApp(viewModel: FocusSenseViewModel) {
     val activityLogs by viewModel.activityLogs.collectAsStateWithLifecycle()
     val flaggedAlerts by viewModel.flaggedAlerts.collectAsStateWithLifecycle()
     val scheduleRules by viewModel.scheduleRules.collectAsStateWithLifecycle()
+    val installedApps by viewModel.installedApps.collectAsStateWithLifecycle()
     val latestLocation by viewModel.latestLocation.collectAsStateWithLifecycle()
     val locationHistory by viewModel.locationHistory.collectAsStateWithLifecycle()
     val allDevices by viewModel.allDevices.collectAsStateWithLifecycle()
@@ -125,6 +127,23 @@ fun FocusSenseApp(viewModel: FocusSenseViewModel) {
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // Initial scan of installed apps and schedule sync on startup + background refresh loop
+    LaunchedEffect(Unit) {
+        while (true) {
+            viewModel.refreshInstalledApps(context)
+            viewModel.syncSchedules()
+            delay(20000)
+        }
+    }
+
+    LaunchedEffect(selectedChildId) {
+        if (selectedChildId.isNotBlank()) {
+            viewModel.refreshInstalledApps(context)
+            viewModel.syncSchedules()
+        }
+    }
 
     // Listen to real-time sentinel notifications & alerts
     LaunchedEffect(Unit) {
@@ -196,7 +215,10 @@ fun FocusSenseApp(viewModel: FocusSenseViewModel) {
                     serverUrl = serverUrl,
                     onUpdateServerUrl = { viewModel.updateServerUrl(it) },
                     onTestServer = { viewModel.testServerConnection() },
-                    onSyncNow = { viewModel.syncData() }
+                    onSyncNow = { viewModel.syncData() },
+                    installedApps = installedApps,
+                    onToggleAppBlock = { pkg, isBlocked -> viewModel.toggleAppBlock(pkg, isBlocked) },
+                    onRefreshInstalledApps = { viewModel.refreshInstalledApps(context) }
                 )
             } else {
                 ChildDashboardScreen(

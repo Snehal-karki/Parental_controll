@@ -150,6 +150,16 @@ class LocationPointModel(Base):
     recorded_at = Column(BigInteger, default=lambda: int(time.time() * 1000), index=True)
     is_synced = Column(Boolean, default=True)
 
+class InstalledAppModel(Base):
+    __tablename__ = "installed_apps"
+    id = Column(String(128), primary_key=True, index=True)
+    child_id = Column(String(64), ForeignKey("users.user_id"), index=True)
+    package_name = Column(String(128), nullable=False)
+    app_name = Column(String(128), nullable=False)
+    category = Column(String(64), default="Application")
+    is_blocked = Column(Boolean, default=False)
+    last_updated = Column(BigInteger, default=lambda: int(time.time() * 1000))
+
 # Create tables in PostgreSQL / Supabase if not already present
 try:
     Base.metadata.create_all(bind=engine)
@@ -238,6 +248,20 @@ class LocationPointSchema(BaseModel):
     accuracy: float = 5.0
     location_name: str = "Live GPS Fix"
     recorded_at: int
+
+class InstalledAppSchema(BaseModel):
+    id: str
+    child_id: str
+    package_name: str
+    app_name: str
+    category: str = "Application"
+    is_blocked: bool = False
+    is_system_app: Optional[bool] = False
+    last_updated: Optional[int] = 0
+
+class AppBlockToggleRequest(BaseModel):
+    package_name: str
+    is_blocked: bool
 
 class SyncPayload(BaseModel):
     child_id: str
@@ -1021,6 +1045,77 @@ def delete_schedule_rule(rule_id: str, db: Session = Depends(get_db)):
     db.delete(rule)
     db.commit()
     return {"status": "deleted", "rule_id": rule_id}
+
+# ---------------------------------------------------------------------------
+# 6b. Real Installed Applications & Instant App Locker
+# ---------------------------------------------------------------------------
+@app.post("/api/devices/{child_id}/apps/sync")
+def sync_installed_apps(child_id: str, apps: List[InstalledAppSchema], db: Session = Depends(get_db)):
+    # Ensure child user exists
+    child_user = db.query(UserModel).filter(UserModel.user_id == child_id).first()
+    if not child_user:
+        group = db.query(FamilyGroupModel).first()
+        if not group:
+            group = FamilyGroupModel(group_id="group-default", family_name="FocusSense Family")
+            db.add(group)
+            db.flush()
+        child_user = UserModel(
+            user_id=child_id,
+            group_id=group.group_id,
+            email=f"{child_id}@family.focussense",
+            password_hash="synced_child",
+            role="child",
+            name="Child Device",
+            pin=""
+        )
+        db.add(child_user)
+        db.commit()
+
+    for app_item in apps:
+        app_uid = app_item.id if app_item.id else f"{child_id}_{app_item.package_name}"
+        existing = db.query(InstalledAppModel).filter(InstalledAppModel.id == app_uid).first()
+        if existing:
+            existing.app_name = app_item.app_name
+            existing.category = app_item.category
+            existing.last_updated = int(time.time() * 1000)
+        else:
+            new_app = InstalledAppModel(
+                id=app_uid,
+                child_id=child_id,
+                package_name=app_item.package_name,
+                app_name=app_item.app_name,
+                category=app_item.category,
+                is_blocked=app_item.is_blocked,
+                last_updated=int(time.time() * 1000)
+            )
+            db.add(new_app)
+    db.commit()
+    return {"status": "success", "count": len(apps)}
+
+@app.get("/api/devices/{child_id}/apps")
+def get_child_installed_apps(child_id: str, db: Session = Depends(get_db)):
+    return db.query(InstalledAppModel).filter(InstalledAppModel.child_id == child_id).order_by(InstalledAppModel.app_name.asc()).all()
+
+@app.post("/api/devices/{child_id}/apps/toggle-block")
+def toggle_app_block(child_id: str, payload: AppBlockToggleRequest, db: Session = Depends(get_db)):
+    app_uid = f"{child_id}_{payload.package_name}"
+    existing = db.query(InstalledAppModel).filter(InstalledAppModel.id == app_uid).first()
+    if existing:
+        existing.is_blocked = payload.is_blocked
+        db.commit()
+    else:
+        new_app = InstalledAppModel(
+            id=app_uid,
+            child_id=child_id,
+            package_name=payload.package_name,
+            app_name=payload.package_name.split('.')[-1].capitalize(),
+            category="Custom",
+            is_blocked=payload.is_blocked,
+            last_updated=int(time.time() * 1000)
+        )
+        db.add(new_app)
+        db.commit()
+    return {"status": "success", "package_name": payload.package_name, "is_blocked": payload.is_blocked}
 
 # ---------------------------------------------------------------------------
 # 7. Live GPS Telemetry

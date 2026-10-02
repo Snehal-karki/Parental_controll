@@ -1,6 +1,7 @@
 package com.example.service
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Intent
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -10,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class ScrapedContentSample(
     val packageName: String,
@@ -64,11 +66,34 @@ class FocusSenseAccessibilityService : AccessibilityService() {
         val app = application as? FocusSenseApplication ?: return
         val currentChildId = app.repository.selectedChildId.value
 
-        // 1. Curfew & Schedule Enforcement Check
+        // 1. Instant Synchronous Check (0ms latency from in-memory cache)
+        val appLabel = getAppLabel(pkgName)
+        if (app.repository.isPackageBlockedSync(pkgName)) {
+            launchBlockScreen(
+                packageName = pkgName,
+                appName = appLabel,
+                ruleName = "Parent Instant Lock",
+                category = "Instant Restriction",
+                endTime = "Until Unlocked"
+            )
+            _lastBlockedApp.value = appLabel
+            return
+        }
+
+        // 2. Curfew & Schedule Enforcement Check
         scope.launch {
             val restriction = app.repository.checkAppRestriction(currentChildId, pkgName)
             if (restriction.isBlocked) {
                 _lastBlockedApp.value = restriction.restrictedAppName
+                withContext(Dispatchers.Main) {
+                    launchBlockScreen(
+                        packageName = pkgName,
+                        appName = appLabel,
+                        ruleName = restriction.ruleName,
+                        category = restriction.category,
+                        endTime = restriction.endTime
+                    )
+                }
             }
         }
 
@@ -97,7 +122,6 @@ class FocusSenseAccessibilityService : AccessibilityService() {
             return
         }
 
-        val appLabel = getAppLabel(pkgName)
         val fullText = filterResult.cleanText
 
         // Avoid re-processing identical text continuously
@@ -197,6 +221,38 @@ class FocusSenseAccessibilityService : AccessibilityService() {
                 pkg.contains("roblox") -> "Roblox"
                 else -> pkg.substringAfterLast('.').replaceFirstChar { it.uppercase() }
             }
+        }
+    }
+
+    private var lastBlockedPkg: String = ""
+    private var lastBlockLaunchTime: Long = 0L
+
+    private fun launchBlockScreen(
+        packageName: String,
+        appName: String,
+        ruleName: String,
+        category: String,
+        endTime: String
+    ) {
+        val now = System.currentTimeMillis()
+        if (packageName == lastBlockedPkg && (now - lastBlockLaunchTime < 2000)) {
+            return
+        }
+        lastBlockedPkg = packageName
+        lastBlockLaunchTime = now
+
+        try {
+            val intent = Intent(applicationContext, com.example.ui.screens.blocking.AppBlockedActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                putExtra(com.example.ui.screens.blocking.AppBlockedActivity.EXTRA_PACKAGE_NAME, packageName)
+                putExtra(com.example.ui.screens.blocking.AppBlockedActivity.EXTRA_APP_NAME, appName)
+                putExtra(com.example.ui.screens.blocking.AppBlockedActivity.EXTRA_RULE_NAME, ruleName)
+                putExtra(com.example.ui.screens.blocking.AppBlockedActivity.EXTRA_CATEGORY, category)
+                putExtra(com.example.ui.screens.blocking.AppBlockedActivity.EXTRA_END_TIME, endTime)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to launch block screen: ${e.message}")
         }
     }
 
