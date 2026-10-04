@@ -40,11 +40,15 @@ DATABASE_URL = os.getenv(
     "postgresql://postgres.jlmyesmofptnrthetvpt:%23SKravi240211964@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres"
 )
 
+# Gemini Cloud AI Configuration (Primary High-Speed Evaluator)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6JHu_rvvgW0ztX4UQXvhf_c42yy5oeNMaaTpqqQPNbx0A")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+
 # DeepSeek Inference Server URL (e.g. vLLM or Ollama instance)
 # Format for vLLM: http://your-gpu-server:8000/v1/chat/completions
 # Format for Ollama: http://your-gpu-server:11434/api/chat
 DEEPSEEK_SERVER_URL = os.getenv("DEEPSEEK_SERVER_URL", "")
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "sk-b5d4a4fdc7e04c12867ee21f479a3d54")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
 # Convert postgres:// or postgresql:// to explicit driver for SQLAlchemy
@@ -284,6 +288,12 @@ class ThreatEvaluateResponse(BaseModel):
     severity_level: Optional[str] = "LOW"
     recommended_action: Optional[str] = "LOG_ONLY"
     parent_action_guidance: Optional[str] = ""
+
+class AIConfigUpdateRequest(BaseModel):
+    gemini_api_key: Optional[str] = None
+    deepseek_api_key: Optional[str] = None
+    deepseek_server_url: Optional[str] = None
+    deepseek_model: Optional[str] = None
 
 # ---------------------------------------------------------------------------
 # FastAPI App Initialization & CORS
@@ -650,10 +660,13 @@ Do NOT include markdown formatting outside the JSON block."""
 @app.get("/api/ai/config")
 def get_ai_sentinel_config():
     """Returns AI Sentinel status, model information, and active engine."""
+    has_gemini = bool(GEMINI_API_KEY and GEMINI_API_KEY != "your_api_key_here")
     has_deepseek = bool(DEEPSEEK_SERVER_URL or DEEPSEEK_API_KEY)
-    active_target = DEEPSEEK_SERVER_URL or ("https://api.deepseek.com/chat/completions" if DEEPSEEK_API_KEY else "FocusSense Multi-Category Rule Engine")
+    active_target = f"Gemini 3.5 Flash Cloud AI ({GEMINI_MODEL})" if has_gemini else (DEEPSEEK_SERVER_URL or ("https://api.deepseek.com/chat/completions" if DEEPSEEK_API_KEY else "FocusSense Multi-Category Rule Engine"))
     return {
         "status": "ready",
+        "gemini_configured": has_gemini,
+        "gemini_model": GEMINI_MODEL,
         "deepseek_configured": has_deepseek,
         "deepseek_model": DEEPSEEK_MODEL,
         "active_endpoint": active_target,
@@ -669,19 +682,119 @@ def get_ai_sentinel_config():
         ]
     }
 
+@app.post("/api/ai/config")
+def update_ai_sentinel_config(payload: AIConfigUpdateRequest):
+    """Dynamically updates Gemini / DeepSeek configuration without requiring server reboot."""
+    global GEMINI_API_KEY, DEEPSEEK_SERVER_URL, DEEPSEEK_API_KEY, DEEPSEEK_MODEL
+    if payload.gemini_api_key is not None:
+        GEMINI_API_KEY = payload.gemini_api_key.strip()
+    if payload.deepseek_api_key is not None:
+        DEEPSEEK_API_KEY = payload.deepseek_api_key.strip()
+    if payload.deepseek_server_url is not None:
+        DEEPSEEK_SERVER_URL = payload.deepseek_server_url.strip()
+    if payload.deepseek_model is not None and payload.deepseek_model.strip():
+        DEEPSEEK_MODEL = payload.deepseek_model.strip()
+
+    has_gemini = bool(GEMINI_API_KEY and GEMINI_API_KEY != "your_api_key_here")
+    has_deepseek = bool(DEEPSEEK_SERVER_URL or DEEPSEEK_API_KEY)
+    active_target = f"Gemini 3.5 Flash Cloud AI ({GEMINI_MODEL})" if has_gemini else (DEEPSEEK_SERVER_URL or ("https://api.deepseek.com/chat/completions" if DEEPSEEK_API_KEY else "FocusSense Multi-Category Rule Engine"))
+    return {
+        "status": "updated",
+        "gemini_configured": has_gemini,
+        "gemini_model": GEMINI_MODEL,
+        "deepseek_configured": has_deepseek,
+        "deepseek_model": DEEPSEEK_MODEL,
+        "active_endpoint": active_target,
+        "message": "AI Sentinel configuration updated successfully."
+    }
+
 @app.post("/api/evaluate", response_model=ThreatEvaluateResponse)
 @app.post("/api/ai/evaluate", response_model=ThreatEvaluateResponse)
 async def evaluate_content_threat(payload: ThreatEvaluateRequest, db: Session = Depends(get_db)):
     """
-    Day 5 DeepSeek AI Threat Pipeline:
-    Routes incoming text from child devices to DeepSeek (vLLM / Ollama / Cloud API)
-    with automatic failover to the multi-category safety rule engine.
+    AI Threat Pipeline:
+    Routes incoming text from child devices to Gemini 3.5 Flash Cloud AI,
+    with automatic failover to DeepSeek and multi-category safety rule engine.
     Persists flagged alerts into Supabase with guaranteed foreign-key resolution.
     """
     text = payload.extracted_text
     lower_text = text.lower()
+    last_error_reason = ""
 
-    # Determine effective DeepSeek endpoint
+    # Priority 1: Gemini 3.5 Flash Cloud AI (Direct High-Speed Multimodal Intelligence)
+    if GEMINI_API_KEY and GEMINI_API_KEY != "your_api_key_here":
+        try:
+            gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+            gemini_payload = {
+                "contents": [{"parts": [{"text": f"""You are FocusSense AI, an expert parental protection sentinel.
+Analyze the following text extracted in real-time from a child's device:
+App: {payload.app_name}
+Title: {payload.content_title}
+Text: \"\"\"{text}\"\"\"
+
+Evaluate across these 7 critical safety categories:
+1. "Predatory Grooming & Stranger Risk" (secrecy, isolation, requests for private meetups or photos)
+2. "Cyberbullying & Harassment" (hostile attacks, slurs, insulting, demeaning)
+3. "Self-Harm & Mental Distress" (suicide, cutting, wanting to die)
+4. "Violence, Weapons & Threats" (guns, knives, attacks, murder, assault)
+5. "Explicit & Adult Content" (pornography, adult sites, explicit chats)
+6. "Substance Abuse & Drugs" (narcotics, vaping, pills, illicit drugs)
+7. "Academic Dishonesty" (exam cheating, paper bots)
+8. "Safe" (normal friendly chats, studies, gaming)
+
+Respond strictly in valid JSON:
+{{
+  "isFlagged": boolean,
+  "threatCategory": "Predatory Grooming & Stranger Risk" | "Cyberbullying & Harassment" | "Self-Harm & Mental Distress" | "Violence, Weapons & Threats" | "Explicit & Adult Content" | "Substance Abuse & Drugs" | "Academic Dishonesty" | "Safe",
+  "confidenceScore": float,
+  "severityLevel": "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
+  "recommendedAction": "LOG_ONLY" | "WARN_CHILD" | "PARENT_ALERT" | "INSTANT_BLOCK",
+  "aiAnalysisSummary": "concise explanation",
+  "parentActionGuidance": "advice for parent"
+}}"""}]}],
+                "generationConfig": {
+                    "responseMimeType": "application/json",
+                    "temperature": 0.1
+                }
+            }
+            gemini_headers = {"Content-Type": "application/json"}
+            gemini_resp = None
+            if httpx is not None:
+                async with httpx.AsyncClient(timeout=8.0) as client:
+                    gemini_resp = await client.post(gemini_url, json=gemini_payload, headers=gemini_headers)
+            elif requests is not None:
+                gemini_resp = requests.post(gemini_url, json=gemini_payload, headers=gemini_headers, timeout=8.0)
+
+            if gemini_resp and gemini_resp.status_code == 200:
+                g_json = gemini_resp.json()
+                raw_text = g_json.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                if raw_text:
+                    parsed = json.loads(raw_text)
+                    threat_det = parsed.get("isFlagged", parsed.get("threat_detected", False))
+                    threat_cat = parsed.get("threatCategory", parsed.get("threat_category", "Safe"))
+                    conf = float(parsed.get("confidenceScore", parsed.get("confidence_score", 0.95)))
+                    sev = parsed.get("severityLevel", parsed.get("severity_level", "HIGH" if threat_det else "LOW"))
+                    rec_action = parsed.get("recommendedAction", parsed.get("recommended_action", "PARENT_ALERT" if threat_det else "LOG_ONLY"))
+                    summary = parsed.get("aiAnalysisSummary", parsed.get("ai_analysis_summary", "Analyzed by Gemini 3.5 Flash."))
+                    guidance = parsed.get("parentActionGuidance", parsed.get("parent_action_guidance", "Review activity log with child."))
+
+                    if threat_det:
+                        _record_threat_log(db, payload, threat_cat, conf, summary)
+
+                    return ThreatEvaluateResponse(
+                        threat_detected=threat_det,
+                        threat_category=threat_cat,
+                        confidence_score=conf,
+                        ai_analysis_summary=summary,
+                        model_used=f"Gemini Cloud AI ({GEMINI_MODEL})",
+                        severity_level=sev,
+                        recommended_action=rec_action,
+                        parent_action_guidance=guidance
+                    )
+        except Exception as e:
+            print("Gemini evaluation fallback:", str(e))
+
+    # Priority 2: DeepSeek endpoint
     target_url = DEEPSEEK_SERVER_URL
     if not target_url and DEEPSEEK_API_KEY:
         target_url = "https://api.deepseek.com/chat/completions"
@@ -767,8 +880,15 @@ Analyze according to the safety guidelines and return pure JSON."""
                         recommended_action=rec_action,
                         parent_action_guidance=guidance
                     )
+            elif status_code == 402:
+                last_error_reason = " (DeepSeek Key: Insufficient Balance - Recharge at platform.deepseek.com)"
+                print("DeepSeek API 402: Insufficient balance on account.")
+            elif status_code and status_code != 200:
+                last_error_reason = f" (DeepSeek HTTP {status_code})"
+                print(f"DeepSeek API HTTP {status_code}: {response_json}")
         except Exception as e:
             # Fall through seamlessly to high-precision rule engine
+            last_error_reason = f" (DeepSeek error: {str(e)[:40]})"
             print("DeepSeek inference unreachable, activating fallback engine:", str(e))
 
     # High-Precision Multi-Category Rule Engine (Fallback & Instant Safety Gate)
@@ -867,7 +987,7 @@ Analyze according to the safety guidelines and return pure JSON."""
         threat_category=threat_category,
         confidence_score=confidence,
         ai_analysis_summary=summary,
-        model_used="FocusSense Tier-2 Multi-Category Safety Classifier",
+        model_used=f"FocusSense Tier-2 Multi-Category Safety Classifier{last_error_reason}",
         severity_level=severity,
         recommended_action=action,
         parent_action_guidance=guidance

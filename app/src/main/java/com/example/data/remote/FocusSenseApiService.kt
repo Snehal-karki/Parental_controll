@@ -102,6 +102,24 @@ data class HealthResponse(
     val timestamp: Long
 )
 
+data class AIConfigResponse(
+    val status: String,
+    val gemini_configured: Boolean = true,
+    val gemini_model: String? = "gemini-3.5-flash",
+    val deepseek_configured: Boolean = false,
+    val deepseek_model: String = "gemini-3.5-flash",
+    val active_endpoint: String = "Gemini 3.5 Flash Cloud AI",
+    val fallback_engine: String? = null,
+    val message: String? = null
+)
+
+data class AIConfigUpdateRequest(
+    val gemini_api_key: String? = null,
+    val deepseek_api_key: String? = null,
+    val deepseek_server_url: String? = null,
+    val deepseek_model: String? = null
+)
+
 data class AppBlockToggleDto(
     val package_name: String,
     val is_blocked: Boolean
@@ -111,6 +129,12 @@ interface FocusSenseApiService {
 
     @GET("/api/health")
     suspend fun healthCheck(): Response<HealthResponse>
+
+    @GET("/api/ai/config")
+    suspend fun getAIConfig(): Response<AIConfigResponse>
+
+    @POST("/api/ai/config")
+    suspend fun updateAIConfig(@Body payload: AIConfigUpdateRequest): Response<AIConfigResponse>
 
     @POST("/api/auth/register")
     suspend fun registerParent(@Body payload: RegisterParentDto): Response<AuthResponseDto>

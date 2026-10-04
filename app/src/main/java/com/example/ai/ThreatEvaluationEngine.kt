@@ -30,7 +30,7 @@ class ThreatEvaluationEngine {
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
-    // 1. Primary evaluation method combining Render Server (DeepSeek Router) with Cloud Gemini & On-Device Fallback
+    // 1. Primary evaluation method: Gemini 3.5 Flash Cloud AI (with Render Server & On-Device Fallback)
     suspend fun evaluateContent(
         appName: String,
         contentTitle: String,
@@ -38,7 +38,20 @@ class ThreatEvaluationEngine {
         serverUrl: String = "https://parental-controll.onrender.com",
         forceOfflineOnly: Boolean = false
     ): ThreatAnalysisResult = withContext(Dispatchers.IO) {
-        // Priority 1: Render Central Server (Connecting to DeepSeek / FastAPI safety engine)
+        // Priority 1: Gemini 3.5 Flash Cloud AI (Direct High-Speed Multimodal Intelligence)
+        val apiKey = BuildConfig.GEMINI_API_KEY.ifBlank { "AQ.Ab8RN6JHu_rvvgW0ztX4UQXvhf_c42yy5oeNMaaTpqqQPNbx0A" }
+        if (!forceOfflineOnly && apiKey.isNotBlank() && apiKey != "MY_GEMINI_API_KEY" && apiKey != "your_api_key_here") {
+            try {
+                val cloudResult = evaluateWithGemini(apiKey, appName, contentTitle, extractedText)
+                if (cloudResult != null) {
+                    return@withContext cloudResult
+                }
+            } catch (_: Exception) {
+                // Fall back gracefully to Render server or on-device
+            }
+        }
+
+        // Priority 2: Render Central Server (FastAPI safety pipeline)
         if (!forceOfflineOnly && serverUrl.isNotBlank()) {
             try {
                 val serverResult = evaluateWithRenderServer(serverUrl, appName, contentTitle, extractedText)
@@ -47,19 +60,6 @@ class ThreatEvaluationEngine {
                 }
             } catch (_: Exception) {
                 // Render server busy/unreachable -> fallback
-            }
-        }
-
-        // Priority 2: Gemini Cloud AI (if API key present)
-        val apiKey = BuildConfig.GEMINI_API_KEY
-        if (!forceOfflineOnly && apiKey.isNotBlank() && apiKey != "MY_GEMINI_API_KEY" && apiKey != "your_api_key_here") {
-            try {
-                val cloudResult = evaluateWithGemini(apiKey, appName, contentTitle, extractedText)
-                if (cloudResult != null) {
-                    return@withContext cloudResult
-                }
-            } catch (_: Exception) {
-                // Fall back gracefully to on-device engine
             }
         }
 
@@ -281,11 +281,23 @@ class ThreatEvaluationEngine {
             Title / Context: $contentTitle
             Extracted Text: "$extractedText"
 
+            Evaluate across these 7 critical safety categories:
+            1. "Predatory Grooming & Stranger Risk" (secrecy, isolation, requests for private meetups or photos)
+            2. "Cyberbullying & Harassment" (hostile attacks, slurs, insulting, demeaning)
+            3. "Self-Harm & Mental Distress" (suicide, cutting, wanting to die)
+            4. "Violence, Weapons & Threats" (guns, knives, attacks, murder, assault)
+            5. "Explicit & Adult Content" (pornography, adult sites, explicit chats)
+            6. "Substance Abuse & Drugs" (narcotics, vaping, pills, illicit drugs)
+            7. "Academic Dishonesty" (exam cheating, paper bots)
+            8. "Safe" (normal friendly chats, studies, gaming)
+
             Respond strictly in valid JSON with these fields:
             {
               "isFlagged": boolean,
-              "threatCategory": "Stranger Risk" | "Cyberbullying" | "Academic Distraction" | "Explicit Content" | "Self-Harm Risk" | "Safe",
+              "threatCategory": "Predatory Grooming & Stranger Risk" | "Cyberbullying & Harassment" | "Self-Harm & Mental Distress" | "Violence, Weapons & Threats" | "Explicit & Adult Content" | "Substance Abuse & Drugs" | "Academic Dishonesty" | "Safe",
               "confidenceScore": float between 0.0 and 1.0,
+              "severityLevel": "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
+              "recommendedAction": "LOG_ONLY" | "WARN_CHILD" | "PARENT_ALERT" | "INSTANT_BLOCK",
               "aiAnalysisSummary": "1-2 sentence concise explanation of why this was flagged or marked safe",
               "parentActionGuidance": "1 sentence practical advice for the parent"
             }
@@ -328,13 +340,23 @@ class ThreatEvaluationEngine {
             ?.optString("text") ?: return null
 
         val parsed = JSONObject(textCandidate)
+        val isFlagged = parsed.optBoolean("isFlagged", false)
+        val category = parsed.optString("threatCategory", if (isFlagged) "Suspicious Activity" else "Safe")
+        val confidence = parsed.optDouble("confidenceScore", 0.9).toFloat()
+        val severity = parsed.optString("severityLevel", if (isFlagged) "HIGH" else "LOW")
+        val action = parsed.optString("recommendedAction", if (isFlagged) "PARENT_ALERT" else "LOG_ONLY")
+        val summary = parsed.optString("aiAnalysisSummary", "Analyzed by FocusSense Gemini 3.5 Flash AI.")
+        val guidance = parsed.optString("parentActionGuidance", "Review activity log with child.")
+
         return ThreatAnalysisResult(
-            isFlagged = parsed.optBoolean("isFlagged", false),
-            threatCategory = parsed.optString("threatCategory", "Safe"),
-            confidenceScore = parsed.optDouble("confidenceScore", 0.0).toFloat(),
-            aiAnalysisSummary = parsed.optString("aiAnalysisSummary", "Analyzed by FocusSense Gemini AI."),
-            parentActionGuidance = parsed.optString("parentActionGuidance", "Review activity log."),
-            detectionEngine = "Gemini 3.5 Flash Cloud AI"
+            isFlagged = isFlagged,
+            threatCategory = category,
+            confidenceScore = confidence,
+            aiAnalysisSummary = summary,
+            parentActionGuidance = guidance,
+            detectionEngine = "Gemini 3.5 Flash Cloud AI",
+            severityLevel = severity,
+            recommendedAction = action
         )
     }
 }
