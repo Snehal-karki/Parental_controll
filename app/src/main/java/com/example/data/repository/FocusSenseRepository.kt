@@ -57,6 +57,9 @@ class FocusSenseRepository(context: Context) {
     private val _currentUser = MutableStateFlow<UserEntity?>(null)
     val currentUser: StateFlow<UserEntity?> = _currentUser.asStateFlow()
 
+    private val _isSessionReady = MutableStateFlow<Boolean>(false)
+    val isSessionReady: StateFlow<Boolean> = _isSessionReady.asStateFlow()
+
     private val _selectedChildId = MutableStateFlow<String>("")
     val selectedChildId: StateFlow<String> = _selectedChildId.asStateFlow()
 
@@ -130,26 +133,178 @@ class FocusSenseRepository(context: Context) {
     }
 
     init {
-        // Restore active user session from local preferences
-        val savedUserId = prefs.getString("saved_user_id", null)
-        if (!savedUserId.isNullOrBlank()) {
-            scope.launch {
-                val user = db.userDao().getUserByIdSync(savedUserId)
-                if (user != null) {
-                    _currentUser.value = user
-                    if (user.role == "child") {
-                        _selectedChildId.value = user.userId
+        // Restore active user session from local preferences or auto-seed demo family on fresh install
+        scope.launch {
+            val savedUserId = prefs.getString("saved_user_id", null)
+            var activeUser: UserEntity? = null
+            if (!savedUserId.isNullOrBlank()) {
+                activeUser = db.userDao().getUserByIdSync(savedUserId)
+            }
+
+            if (activeUser == null) {
+                val existingParents = db.userDao().getUsersByRoleSync("parent")
+                if (existingParents.isNotEmpty()) {
+                    activeUser = existingParents.first()
+                } else {
+                    // Seed initial demo data for instant out-of-the-box exploration in Android Studio & Emulators
+                    val defaultGroup = FamilyGroupEntity(
+                        groupId = "group-demo-01",
+                        familyName = "FocusSense Family"
+                    )
+                    db.familyGroupDao().insert(defaultGroup)
+
+                    val defaultParent = UserEntity(
+                        userId = "parent-sarah-01",
+                        groupId = defaultGroup.groupId,
+                        email = "parent@demo.com",
+                        password = "demo",
+                        role = "parent",
+                        name = "Sarah Connor (Parent)",
+                        pin = "1234"
+                    )
+                    db.userDao().insert(defaultParent)
+
+                    val defaultChild = UserEntity(
+                        userId = "child-leo-01",
+                        groupId = defaultGroup.groupId,
+                        email = "leo@family.internal",
+                        password = "demo",
+                        role = "child",
+                        name = "Leo",
+                        pin = ""
+                    )
+                    db.userDao().insert(defaultChild)
+
+                    val defaultChildDevice = DeviceEntity(
+                        deviceId = "dev-child-01",
+                        userId = defaultChild.userId,
+                        deviceName = "Leo's Phone (Galaxy A54)",
+                        batteryPercent = 88,
+                        isOnline = true
+                    )
+                    db.deviceDao().insert(defaultChildDevice)
+
+                    val defaultRule1 = ScheduleRuleEntity(
+                        ruleId = "rule-school-hours",
+                        childId = defaultChild.userId,
+                        ruleName = "School Focus Hours",
+                        category = "Education",
+                        startTime = "08:30",
+                        endTime = "15:00",
+                        dayOfWeek = "Mon,Tue,Wed,Thu,Fri",
+                        restrictedPackages = "com.zhiliaoapp.musically,com.instagram.android,com.roblox.client",
+                        isActive = true
+                    )
+                    val defaultRule2 = ScheduleRuleEntity(
+                        ruleId = "rule-bedtime-curfew",
+                        childId = defaultChild.userId,
+                        ruleName = "Bedtime Curfew",
+                        category = "Bedtime",
+                        startTime = "21:30",
+                        endTime = "06:30",
+                        dayOfWeek = "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
+                        restrictedPackages = "com.google.android.youtube,com.zhiliaoapp.musically,com.instagram.android",
+                        isActive = true
+                    )
+                    db.scheduleRuleDao().insert(defaultRule1)
+                    db.scheduleRuleDao().insert(defaultRule2)
+
+                    val now = System.currentTimeMillis()
+                    db.activityLogDao().insert(
+                        ActivityLogEntity(
+                            logId = "log-seed-01",
+                            childId = defaultChild.userId,
+                            packageName = "com.google.android.youtube",
+                            appName = "YouTube",
+                            contentTitle = "Crash Course Biology: Cell Structures",
+                            extractedText = "Learning about mitochondria and cell biology structures for exam.",
+                            recordedAt = now - (15 * 60 * 1000L),
+                            isFlagged = false,
+                            threatCategory = "Safe"
+                        )
+                    )
+                    db.activityLogDao().insert(
+                        ActivityLogEntity(
+                            logId = "log-seed-02",
+                            childId = defaultChild.userId,
+                            packageName = "com.google.android.apps.messaging",
+                            appName = "Messages",
+                            contentTitle = "Family Group Chat",
+                            extractedText = "Dad: Remember to head home right after science club practice!",
+                            recordedAt = now - (45 * 60 * 1000L),
+                            isFlagged = false,
+                            threatCategory = "Safe"
+                        )
+                    )
+
+                    db.locationDao().insert(
+                        LocationPointEntity(
+                            locId = "loc-seed-01",
+                            childId = defaultChild.userId,
+                            latitude = 37.7749,
+                            longitude = -122.4194,
+                            accuracy = 4.5f,
+                            locationName = "Lincoln High School Campus",
+                            recordedAt = now - (10 * 60 * 1000L)
+                        )
+                    )
+
+                    val seedApps = listOf(
+                        InstalledAppEntity("app-1", defaultChild.userId, "com.google.android.youtube", "YouTube", "Streaming", isBlocked = false),
+                        InstalledAppEntity("app-2", defaultChild.userId, "com.zhiliaoapp.musically", "TikTok", "Social", isBlocked = true),
+                        InstalledAppEntity("app-3", defaultChild.userId, "com.roblox.client", "Roblox", "Gaming", isBlocked = false),
+                        InstalledAppEntity("app-4", defaultChild.userId, "com.instagram.android", "Instagram", "Social", isBlocked = true),
+                        InstalledAppEntity("app-5", defaultChild.userId, "com.android.chrome", "Chrome", "Browsers", isBlocked = false),
+                        InstalledAppEntity("app-6", defaultChild.userId, "com.whatsapp", "WhatsApp", "Social", isBlocked = false),
+                        InstalledAppEntity("app-7", defaultChild.userId, "com.google.android.apps.messaging", "Messages", "Social", isBlocked = false)
+                    )
+                    db.installedAppDao().insertAll(seedApps)
+
+                    activeUser = defaultParent
+                }
+            }
+
+            if (activeUser != null) {
+                _currentUser.value = activeUser
+                prefs.edit().putString("saved_user_id", activeUser.userId).apply()
+                if (activeUser.role == "child") {
+                    _selectedChildId.value = activeUser.userId
+                } else {
+                    val children = db.userDao().getUsersByRoleSync("child")
+                    if (children.isNotEmpty()) {
+                        _selectedChildId.value = children.first().userId
                     }
                 }
             }
-        }
 
-        // Initialize in-memory blocked apps cache from DB
-        scope.launch {
+            // Initialize in-memory blocked apps cache from DB
             try {
                 val blocked = db.installedAppDao().getBlockedPackageNamesSync()
                 _instantBlockedPackages.value = blocked.map { it.lowercase() }.toSet()
             } catch (_: Exception) {}
+
+            _isSessionReady.value = true
+        }
+    }
+
+    suspend fun launchDemoParent() = withContext(Dispatchers.IO) {
+        val parent = db.userDao().getUsersByRoleSync("parent").firstOrNull()
+        if (parent != null) {
+            _currentUser.value = parent
+            prefs.edit().putString("saved_user_id", parent.userId).apply()
+            val children = db.userDao().getUsersByRoleSync("child")
+            if (children.isNotEmpty()) {
+                _selectedChildId.value = children.first().userId
+            }
+        }
+    }
+
+    suspend fun launchDemoChild() = withContext(Dispatchers.IO) {
+        val child = db.userDao().getUsersByRoleSync("child").firstOrNull()
+        if (child != null) {
+            _currentUser.value = child
+            prefs.edit().putString("saved_user_id", child.userId).apply()
+            _selectedChildId.value = child.userId
         }
     }
 

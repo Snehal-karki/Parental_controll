@@ -31,6 +31,7 @@ class FocusSenseViewModel(
 
     // Current User Session
     val currentUser: StateFlow<UserEntity?> = repository.currentUser
+    val isSessionReady: StateFlow<Boolean> = repository.isSessionReady
     val selectedChildId: StateFlow<String> = repository.selectedChildId
     val isNetworkConnected: StateFlow<Boolean> = repository.isNetworkConnected
     val isSyncing: StateFlow<Boolean> = repository.isSyncing
@@ -181,6 +182,18 @@ class FocusSenseViewModel(
     fun signOut() {
         viewModelScope.launch {
             repository.signOut()
+        }
+    }
+
+    fun launchDemoParent() {
+        viewModelScope.launch {
+            repository.launchDemoParent()
+        }
+    }
+
+    fun launchDemoChild() {
+        viewModelScope.launch {
+            repository.launchDemoChild()
         }
     }
 

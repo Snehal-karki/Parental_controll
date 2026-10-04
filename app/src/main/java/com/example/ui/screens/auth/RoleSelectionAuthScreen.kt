@@ -151,6 +151,12 @@ fun RoleSelectionAuthScreen(
                                 onSelectChild = {
                                     viewModel.clearAuthError()
                                     currentView = SelectedRoleView.CHILD_FLOW
+                                },
+                                onLaunchDemoParent = {
+                                    viewModel.launchDemoParent()
+                                },
+                                onLaunchDemoChild = {
+                                    viewModel.launchDemoChild()
                                 }
                             )
                         }
@@ -297,7 +303,9 @@ private fun AuthBrandHeader(
 @Composable
 private fun RolePickerView(
     onSelectParent: () -> Unit,
-    onSelectChild: () -> Unit
+    onSelectChild: () -> Unit,
+    onLaunchDemoParent: () -> Unit,
+    onLaunchDemoChild: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -320,7 +328,102 @@ private fun RolePickerView(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
         )
 
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Instant 1-Click Demo Evaluation Card
+        Card(
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = IndigoPrimary.copy(alpha = 0.08f)),
+            border = androidx.compose.foundation.BorderStroke(1.5.dp, IndigoPrimary.copy(alpha = 0.35f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(IndigoPrimary),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shield,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Instant 1-Click Live Demo",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = IndigoPrimary
+                        )
+                        Text(
+                            text = "Explore full dashboard without typing credentials",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = onLaunchDemoParent,
+                        colors = ButtonDefaults.buttonColors(containerColor = IndigoPrimary),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("demo_launch_parent_button")
+                    ) {
+                        Text(
+                            text = "Parent Dashboard",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = onLaunchDemoChild,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("demo_launch_child_button")
+                    ) {
+                        Text(
+                            text = "Child Sentinel",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(20.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
+            Text(
+                text = "  OR SET UP THIS DEVICE  ",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         // Role Card: Parent
         Card(
@@ -470,7 +573,7 @@ private fun RolePickerView(
             }
         }
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
         // Info Callout
         Surface(
@@ -489,12 +592,21 @@ private fun RolePickerView(
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = "Tip: Start by setting up the Parent phone first. Then download this same app on your child's phone and link it with your parent login.",
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Column {
+                    Text(
+                        text = "Android Studio Note:",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "If backend files (/server/main.py, requirements.txt, .env) are not visible in the left sidebar, click the dropdown above the project tree and switch from 'Android' to 'Project' view.",
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -635,7 +747,40 @@ private fun ParentAuthView(
                 colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = IndigoPrimary)
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = IndigoPrimary.copy(alpha = 0.08f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable {
+                        email = "parent@demo.com"
+                        password = "demo"
+                    }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Key,
+                        contentDescription = null,
+                        tint = IndigoPrimary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Auto-fill Demo Credentials (parent@demo.com / demo)",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = IndigoPrimary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
 
             Button(
                 onClick = {

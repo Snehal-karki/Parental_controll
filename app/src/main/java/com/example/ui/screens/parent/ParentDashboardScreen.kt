@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.CheckCircle
@@ -223,7 +224,8 @@ fun ParentDashboardScreen(
                     onFilterChange = { logFilter = it },
                     onSelectLog = { selectedLogForDetail = it },
                     onAcknowledge = onAcknowledgeAlert,
-                    onRemove = onRemoveLog
+                    onRemove = onRemoveLog,
+                    onNavigateToThreatLab = { selectedTab = 3 }
                 )
                 1 -> ScheduleManagerTab(
                     childName = childName,
@@ -302,7 +304,8 @@ private fun AlertsAndActivitiesTab(
     onFilterChange: (String) -> Unit,
     onSelectLog: (ActivityLogEntity) -> Unit,
     onAcknowledge: (String) -> Unit,
-    onRemove: (String) -> Unit
+    onRemove: (String) -> Unit,
+    onNavigateToThreatLab: () -> Unit = {}
 ) {
     val filteredLogs = when (filter) {
         "flagged" -> logs.filter { it.isFlagged }
@@ -394,6 +397,59 @@ private fun AlertsAndActivitiesTab(
                         onClick = { onFilterChange("safe") },
                         label = { Text("Safe (${logs.count { !it.isFlagged }})") }
                     )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF6366F1).copy(alpha = 0.08f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF6366F1).copy(alpha = 0.25f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onNavigateToThreatLab() }
+                        .testTag("gemini_sentinel_shortcut_banner")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF6366F1)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Security,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Gemini 3.5 Flash Sentinel Active",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF4338CA)
+                            )
+                            Text(
+                                text = "7-Category Cloud Safety Reasoning • Tap to open Threat Lab",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = null,
+                            tint = Color(0xFF6366F1),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }

@@ -26,8 +26,10 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -65,6 +67,7 @@ import com.example.ui.screens.parent.ParentDashboardScreen
 import com.example.ui.theme.EmeraldSafe
 import com.example.ui.theme.IndigoPrimary
 import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.theme.Navy800
 import com.example.ui.theme.PurpleAccent
 import com.example.ui.viewmodel.FocusSenseViewModel
 import com.example.ui.viewmodel.FocusSenseViewModelFactory
@@ -92,6 +95,43 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun FocusSenseApp(viewModel: FocusSenseViewModel) {
     val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
+    val isSessionReady by viewModel.isSessionReady.collectAsStateWithLifecycle()
+
+    if (!isSessionReady) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Navy800),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(IndigoPrimary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Shield,
+                        contentDescription = "FocusSense",
+                        tint = Color.White,
+                        modifier = Modifier.size(42.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(20.dp))
+                Text(
+                    text = "FocusSense",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                CircularProgressIndicator(color = EmeraldSafe, modifier = Modifier.size(28.dp))
+            }
+        }
+        return
+    }
 
     // 1. Initial State: If user is not yet logged in / onboarded, show Role Selection & Auth
     if (currentUser == null) {

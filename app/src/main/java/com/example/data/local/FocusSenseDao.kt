@@ -42,6 +42,9 @@ interface UserDao {
     @Query("SELECT * FROM users WHERE role = :role ORDER BY name ASC")
     fun getUsersByRole(role: String): Flow<List<UserEntity>>
 
+    @Query("SELECT * FROM users WHERE role = :role ORDER BY name ASC")
+    suspend fun getUsersByRoleSync(role: String): List<UserEntity>
+
     @Query("SELECT * FROM users WHERE userId = :id LIMIT 1")
     fun getUserById(id: String): Flow<UserEntity?>
 
