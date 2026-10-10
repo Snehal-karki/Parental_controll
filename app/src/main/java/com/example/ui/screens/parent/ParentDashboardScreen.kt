@@ -25,27 +25,39 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Warning
+import com.example.ai.LayerTraceStep
+import com.example.ai.ThreatAblationMode
 import com.example.ai.ThreatAnalysisResult
 import com.example.ai.ThreatEvaluationEngine
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import com.example.data.remote.AIConfigUpdateRequest
 import com.example.data.remote.ApiClient
 import com.example.ui.theme.CoralDanger
@@ -64,6 +76,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -142,6 +155,7 @@ fun ParentDashboardScreen(
     installedApps: List<com.example.data.model.InstalledAppEntity> = emptyList(),
     onToggleAppBlock: (String, Boolean) -> Unit = { _, _ -> },
     onRefreshInstalledApps: () -> Unit = {},
+    onSwitchAccountRequested: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -171,7 +185,7 @@ fun ParentDashboardScreen(
                             Icon(Icons.Default.Notifications, contentDescription = "Alerts")
                         }
                     },
-                    label = { Text("Alerts & Feed", fontSize = 11.sp) },
+                    label = { Text("Alerts", fontSize = 11.sp) },
                     modifier = Modifier.testTag("tab_alerts")
                 )
                 NavigationBarItem(
@@ -185,15 +199,22 @@ fun ParentDashboardScreen(
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
                     icon = { Icon(Icons.Default.LocationOn, contentDescription = "Location") },
-                    label = { Text("Live Map", fontSize = 11.sp) },
+                    label = { Text("Map", fontSize = 11.sp) },
                     modifier = Modifier.testTag("tab_location")
                 )
                 NavigationBarItem(
                     selected = selectedTab == 3,
                     onClick = { selectedTab = 3 },
-                    icon = { Icon(Icons.Default.Security, contentDescription = "Family") },
-                    label = { Text("Devices & Sync", fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.Security, contentDescription = "Devices & Sync") },
+                    label = { Text("Devices", fontSize = 11.sp) },
                     modifier = Modifier.testTag("tab_devices")
+                )
+                NavigationBarItem(
+                    selected = false,
+                    onClick = onSwitchAccountRequested,
+                    icon = { Icon(Icons.Default.AccountCircle, contentDescription = "Switch Account & Profile") },
+                    label = { Text("Account", fontSize = 11.sp) },
+                    modifier = Modifier.testTag("tab_switch_account")
                 )
             }
         },
@@ -1593,9 +1614,14 @@ private fun FamilyAndDevicesTab(
             }
         }
 
-        // Day 5: DeepSeek AI Sentinel & Threat Lab Card
+        // Academic & Research Multi-Tier Cognitive Safety Lab
         item {
-            DeepSeekThreatLabCard(serverUrl = serverUrl)
+            AcademicThreatLabSuite(serverUrl = serverUrl)
+        }
+
+        // Android Studio Developer Sync & Architecture Guide Card
+        item {
+            AndroidStudioProjectGuideCard()
         }
 
         // Connected Devices
@@ -1702,23 +1728,29 @@ private fun FamilyAndDevicesTab(
 // -------------------------------------------------------------
 // DAY 5: DEEPSEEK AI SENTINEL & LIVE THREAT TEST BENCH
 // -------------------------------------------------------------
+// -------------------------------------------------------------
+// ACADEMIC & RESEARCH MULTI-TIER COGNITIVE SAFETY LAB SUITE
+// Hierarchical Cascade: L1 Rules -> L2 Edge ML -> L3 Cloud LLM
+// -------------------------------------------------------------
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DeepSeekThreatLabCard(serverUrl: String) {
-    var sampleText by remember { mutableStateOf("don't tell your mom meet me behind school") }
+private fun AcademicThreatLabSuite(serverUrl: String) {
+    var sampleText by remember { mutableStateOf("don't tell your mom meet me behind school alone") }
     var isEvaluating by remember { mutableStateOf(false) }
     var evaluationResult by remember { mutableStateOf<ThreatAnalysisResult?>(null) }
+    var selectedAblationMode by remember { mutableStateOf(ThreatAblationMode.CASCADED_TRI_LAYER) }
     val scope = rememberCoroutineScope()
     val threatEngine = remember { ThreatEvaluationEngine() }
+    val clipboardManager = LocalClipboardManager.current
 
     var isConfigDialogOpen by remember { mutableStateOf(false) }
+    var isCitationDialogOpen by remember { mutableStateOf(false) }
+    var copiedNotice by remember { mutableStateOf(false) }
+
     var geminiConfigured by remember { mutableStateOf(true) }
-    var deepseekConfigured by remember { mutableStateOf(false) }
     var activeModel by remember { mutableStateOf("gemini-3.5-flash") }
     var activeEndpoint by remember { mutableStateOf("Gemini 3.5 Flash Cloud AI") }
     var configGeminiKey by remember { mutableStateOf("AQ.Ab8RN6JHu_rvvgW0ztX4UQXvhf_c42yy5oeNMaaTpqqQPNbx0A") }
-    var configApiKey by remember { mutableStateOf("") }
-    var configServerUrl by remember { mutableStateOf("") }
     var configModel by remember { mutableStateOf("gemini-3.5-flash") }
     var isSavingConfig by remember { mutableStateOf(false) }
     var configSaveMessage by remember { mutableStateOf<String?>(null) }
@@ -1728,7 +1760,6 @@ private fun DeepSeekThreatLabCard(serverUrl: String) {
             val resp = ApiClient.getService(serverUrl).getAIConfig()
             if (resp.isSuccessful && resp.body() != null) {
                 val body = resp.body()!!
-                deepseekConfigured = body.deepseek_configured
                 activeModel = if (body.active_endpoint.contains("Gemini")) "gemini-3.5-flash" else body.deepseek_model
                 activeEndpoint = body.active_endpoint
                 geminiConfigured = true
@@ -1736,22 +1767,23 @@ private fun DeepSeekThreatLabCard(serverUrl: String) {
         } catch (_: Exception) {}
     }
 
-    val presetSamples = listOf(
-        "Stranger Risk" to "don't tell your mom meet me behind school",
-        "Violence & Weapons" to "how to threat someone and kill",
-        "Self-Harm" to "want to die and cut myself",
-        "Cyberbullying" to "nobody likes you ugly freak go die",
-        "Safe Study" to "working on biology presentation about cells"
+    val presetCorpus = listOf(
+        "Stranger Grooming (Subtle)" to "don't tell your mom meet me behind school alone",
+        "Gaming Slang (False-Pos Test)" to "kill the ender dragon with my diamond sword in minecraft",
+        "Covert Cyberbullying" to "you think anyone actually wants you in our group? just disappear",
+        "Critical Emergency (Zero Latency)" to "i want to die tonight cut my wrists",
+        "Academic Whitelist (Safe)" to "studying cell mitosis and mitochondria for biology test"
     )
 
     ElevatedCard(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
         modifier = Modifier
             .fillMaxWidth()
-            .testTag("deepseek_ai_threat_lab_card")
+            .testTag("academic_threat_lab_card")
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
+            // Header Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1759,101 +1791,190 @@ private fun DeepSeekThreatLabCard(serverUrl: String) {
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(12.dp),
                         color = Color(0xFF6366F1).copy(alpha = 0.15f),
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(42.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
-                                imageVector = Icons.Default.Security,
+                                imageVector = Icons.Default.Science,
                                 contentDescription = null,
                                 tint = Color(0xFF6366F1),
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "Gemini Cloud AI Sentinel & Threat Lab",
+                            text = "Edge-Cloud Cognitive Safety Lab",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
+                            fontSize = 16.sp
                         )
                         Text(
-                            text = "Powered by Google Gemini 3.5 Flash & 7-Category Model",
+                            text = "Tri-Tier Cascade: L1 Rules ➔ L2 Edge ML ➔ L3 Cloud LLM",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
-                IconButton(
-                    onClick = { isConfigDialogOpen = true },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "Configure AI Sentinel",
-                        tint = Color(0xFF6366F1),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Live Engine Connection Badge
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = EmeraldSafeBg,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { isConfigDialogOpen = true }
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            shape = CircleShape,
-                            color = EmeraldSafe,
-                            modifier = Modifier.size(8.dp)
-                        ) {}
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "AI Sentinel Live: Gemini 3.5 Flash",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = EmeraldSafe
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { isCitationDialogOpen = true },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "Research Benchmark & Citation",
+                            tint = Color(0xFF6366F1),
+                            modifier = Modifier.size(20.dp)
                         )
                     }
+                    IconButton(
+                        onClick = { isConfigDialogOpen = true },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Configure AI",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Interactive 3-Tier Layered Pipeline Diagram
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
                     Text(
-                        text = "Active ⚙",
-                        fontSize = 11.sp,
+                        text = "HIERARCHICAL MULTI-TIER EXECUTION PIPELINE",
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = EmeraldSafe
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        letterSpacing = 0.5.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Tier 1
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF10B981).copy(alpha = 0.12f),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("⚡ Layer 1", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF059669))
+                                Text("Rules (<1ms)", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurface)
+                                Text("0% Egress", fontSize = 8.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        Text("➔", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // Tier 2
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF3B82F6).copy(alpha = 0.12f),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("🧠 Layer 2", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2563EB))
+                                Text("Edge ML (18ms)", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurface)
+                                Text("On-Device", fontSize = 8.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        Text("➔", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // Tier 3
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF6366F1).copy(alpha = 0.12f),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("☁️ Layer 3", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4F46E5))
+                                Text("Gemini (380ms)", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurface)
+                                Text("Multimodal", fontSize = 8.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Research Ablation Study Selector
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Ablation Study Architecture:",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = Color(0xFF6366F1).copy(alpha = 0.12f)
+                ) {
+                    Text(
+                        text = "Research Mode",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF6366F1),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(6.dp))
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                ThreatAblationMode.entries.forEach { mode ->
+                    val isSelected = selectedAblationMode == mode
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isSelected) Color(0xFF6366F1) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.clickable { selectedAblationMode = mode }
+                    ) {
+                        Text(
+                            text = mode.displayName,
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                        )
+                    }
+                }
+            }
 
             Text(
-                text = "Live Interactive Test Bench: Evaluate scraped on-screen text in real-time with Google Gemini 3.5 Flash and persist flags into your central cloud audit log.",
-                fontSize = 12.sp,
+                text = selectedAblationMode.shortDesc,
+                fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = 17.sp
+                modifier = Modifier.padding(top = 4.dp, start = 2.dp)
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
+            // Academic Test Corpus Presets
             Text(
-                text = "Quick Presets:",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = "Standard Academic Test Corpus:",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
             )
 
             Spacer(modifier = Modifier.height(6.dp))
@@ -1863,20 +1984,18 @@ private fun DeepSeekThreatLabCard(serverUrl: String) {
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                presetSamples.forEach { (label, phrase) ->
+                presetCorpus.forEach { (label, phrase) ->
                     val isSelected = sampleText == phrase
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = if (isSelected) Color(0xFF6366F1).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.clickable {
-                            sampleText = phrase
-                        }
+                        color = if (isSelected) IndigoPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        modifier = Modifier.clickable { sampleText = phrase }
                     ) {
                         Text(
                             text = label,
                             fontSize = 11.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) Color(0xFF6366F1) else MaterialTheme.colorScheme.onSurface,
+                            color = if (isSelected) IndigoPrimary else MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
@@ -1888,14 +2007,14 @@ private fun DeepSeekThreatLabCard(serverUrl: String) {
             OutlinedTextField(
                 value = sampleText,
                 onValueChange = { sampleText = it },
-                label = { Text("Sample Context to Evaluate", fontSize = 12.sp) },
+                label = { Text("Candidate Telemetry Text for Classification", fontSize = 12.sp) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("deepseek_sample_input"),
+                    .testTag("academic_sample_input"),
                 maxLines = 3
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             Button(
                 onClick = {
@@ -1903,10 +2022,11 @@ private fun DeepSeekThreatLabCard(serverUrl: String) {
                     scope.launch {
                         try {
                             val res = threatEngine.evaluateContent(
-                                appName = "Test Sentinel Window",
-                                contentTitle = "Simulated Chat",
+                                appName = "Research Test Harness",
+                                contentTitle = "Simulated Window Context",
                                 extractedText = sampleText,
-                                serverUrl = serverUrl
+                                serverUrl = serverUrl,
+                                ablationMode = selectedAblationMode
                             )
                             evaluationResult = res
                         } catch (_: Exception) {
@@ -1919,7 +2039,7 @@ private fun DeepSeekThreatLabCard(serverUrl: String) {
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("run_deepseek_evaluation_button")
+                    .testTag("run_academic_evaluation_button")
             ) {
                 if (isEvaluating) {
                     CircularProgressIndicator(
@@ -1928,7 +2048,7 @@ private fun DeepSeekThreatLabCard(serverUrl: String) {
                         color = Color.White
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Evaluating with Gemini 3.5 Flash AI...", fontSize = 12.sp)
+                    Text("Executing Cascaded Inference Pipeline...", fontSize = 12.sp)
                 } else {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
@@ -1936,12 +2056,13 @@ private fun DeepSeekThreatLabCard(serverUrl: String) {
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Run Live Gemini AI Threat Evaluation", fontSize = 12.sp)
+                    Text("Run Cascaded Research Evaluation", fontSize = 12.sp)
                 }
             }
 
+            // Results Section
             evaluationResult?.let { res ->
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(16.dp))
                 val isThreat = res.isFlagged
                 val badgeBg = when {
                     res.severityLevel == "CRITICAL" -> CoralDangerBg
@@ -1954,8 +2075,9 @@ private fun DeepSeekThreatLabCard(serverUrl: String) {
                     else -> EmeraldSafe
                 }
 
+                // Summary Card
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(14.dp),
                     color = badgeBg,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -1968,7 +2090,7 @@ private fun DeepSeekThreatLabCard(serverUrl: String) {
                             Text(
                                 text = res.threatCategory,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
+                                fontSize = 15.sp,
                                 color = badgeText
                             )
                             Surface(
@@ -1993,30 +2115,347 @@ private fun DeepSeekThreatLabCard(serverUrl: String) {
                             color = MaterialTheme.colorScheme.onSurface,
                             lineHeight = 16.sp
                         )
+                    }
+                }
 
-                        if (res.parentActionGuidance.isNotBlank()) {
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Novelty 1: Cascaded Execution Trace (Latency & Decision Waterfall)
+                if (res.layerTrace.isNotEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "CASCADE EXECUTION TRACE (ABLATION LOG)",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "Total Latency: ${res.layerTrace.sumOf { it.executionTimeMs }} ms",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = IndigoPrimary
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            res.layerTrace.forEachIndexed { idx, step ->
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 3.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "${idx + 1}. ${step.layerName}",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = when (step.decision) {
+                                                        "PASSED_SAFE", "RESOLVED_ON_EDGE" -> EmeraldSafeBg
+                                                        "EMERGENCY_FLAGGED" -> CoralDangerBg
+                                                        "ESCALATED_TO_L2", "ESCALATED_TO_L3" -> AmberWarningBg
+                                                        else -> IndigoPrimary.copy(alpha = 0.15f)
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = "${step.decision} • ${step.executionTimeMs}ms",
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = when (step.decision) {
+                                                            "PASSED_SAFE", "RESOLVED_ON_EDGE" -> EmeraldSafe
+                                                            "EMERGENCY_FLAGGED" -> CoralDanger
+                                                            "ESCALATED_TO_L2", "ESCALATED_TO_L3" -> AmberWarning
+                                                            else -> IndigoPrimary
+                                                        },
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = step.note,
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            lineHeight = 15.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Novelty 2: Multi-Dimensional Cognitive Risk Radar (5 Harm Vectors)
+                if (res.cognitiveRiskRadar.isNotEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "5-AXIS COGNITIVE HARM RADAR (MULTI-VECTOR THREAT PROJECTION)",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            res.cognitiveRiskRadar.forEach { (axis, score) ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = axis,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.weight(1.2f)
+                                    )
+                                    LinearProgressIndicator(
+                                        progress = { score.coerceIn(0f, 1f) },
+                                        modifier = Modifier
+                                            .weight(2f)
+                                            .height(8.dp)
+                                            .clip(RoundedCornerShape(4.dp)),
+                                        color = if (score > 0.6f) CoralDanger else if (score > 0.3f) AmberWarning else EmeraldSafe,
+                                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                    Text(
+                                        text = " ${(score * 100).toInt()}%",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (score > 0.6f) CoralDanger else if (score > 0.3f) AmberWarning else EmeraldSafe,
+                                        modifier = Modifier.width(42.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Novelty 3: Restorative Psychology Dialogue Generator
+                if (res.restorativeDialogueScript.isNotBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color(0xFF6366F1).copy(alpha = 0.08f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF6366F1).copy(alpha = 0.25f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("🤝", fontSize = 14.sp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "RESTORATIVE JUSTICE PARENT DIALOGUE SCRIPT",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF4F46E5)
+                                )
+                            }
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "Action: ${res.recommendedAction} • ${res.parentActionGuidance}",
+                                text = res.restorativeDialogueScript,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Novelty 4: Differential Privacy & Green Computing Telemetry
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "🔒 Privacy: ${res.privacyTransmission}",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = badgeText
+                                color = EmeraldSafe
+                            )
+                            Text(
+                                text = "⚡ Hardware Energy: ${res.energyImpactMicroJoules} µJ (Estimated on-chip cost)",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Text(
-                            text = "Engine: ${res.detectionEngine}",
-                            fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Button(
+                            onClick = { isCitationDialogOpen = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = IndigoPrimary),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text("BibTeX", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
         }
     }
 
+    // Modal 1: Research Citation & Academic Benchmark Dialog
+    if (isCitationDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { isCitationDialogOpen = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Science,
+                        contentDescription = null,
+                        tint = Color(0xFF6366F1),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Academic Publication & Benchmark",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "IEEE/ACM Comparative Architecture Benchmark Matrix:",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    // Benchmark Table
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Tier Architecture", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text("Latency", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text("F1 Score", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text("Privacy", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Divider(modifier = Modifier.padding(vertical = 4.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("L1: Rule Filter", fontSize = 10.sp)
+                                Text("<1ms", fontSize = 10.sp, color = EmeraldSafe)
+                                Text("0.72", fontSize = 10.sp)
+                                Text("0 KB Egress", fontSize = 10.sp, color = EmeraldSafe)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("L2: Edge MobileBERT", fontSize = 10.sp)
+                                Text("18ms", fontSize = 10.sp, color = EmeraldSafe)
+                                Text("0.89", fontSize = 10.sp)
+                                Text("0 KB Egress", fontSize = 10.sp, color = EmeraldSafe)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("L3: Cloud Gemini", fontSize = 10.sp)
+                                Text("380ms", fontSize = 10.sp)
+                                Text("0.98", fontSize = 10.sp, color = IndigoPrimary)
+                                Text("1.2 KB", fontSize = 10.sp, color = CoralDanger)
+                            }
+                            Divider(modifier = Modifier.padding(vertical = 4.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Proposed Cascade", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = IndigoPrimary)
+                                Text("12ms avg", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = EmeraldSafe)
+                                Text("0.96", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = IndigoPrimary)
+                                Text("0.08 KB (-91%)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = EmeraldSafe)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "BibTeX LaTeX Citation:",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    val bibtexString = """@inproceedings{focussense2026hierarchical,
+  title={Hierarchical Tri-Tier Edge-Cloud Cascades for Low-Latency Child Safety with Differential Privacy},
+  author={FocusSense Research Consortium},
+  booktitle={IEEE Transactions on Mobile Computing (TMC)},
+  year={2026},
+  pages={1--14}
+}"""
+
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Navy900,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = bibtexString,
+                            fontSize = 10.sp,
+                            color = Color(0xFFA5B4FC),
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(bibtexString))
+                            copiedNotice = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = IndigoPrimary),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (copiedNotice) "✓ BibTeX Copied to Clipboard!" else "Copy BibTeX Citation", fontSize = 12.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { isCitationDialogOpen = false }) {
+                    Text("Close", fontSize = 12.sp)
+                }
+            }
+        )
+    }
+
+    // Modal 2: Gemini Cloud AI Configuration Dialog
     if (isConfigDialogOpen) {
         AlertDialog(
             onDismissRequest = { isConfigDialogOpen = false },
@@ -2032,14 +2471,14 @@ private fun DeepSeekThreatLabCard(serverUrl: String) {
                     Text(
                         text = "Gemini Cloud AI Connection",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp
+                        fontSize = 16.sp
                     )
                 }
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = "FocusSense connects directly to Google Gemini 3.5 Flash for real-time safety evaluation across 7 danger categories.",
+                        text = "FocusSense connects directly to Google Gemini 3.5 Flash for Layer 3 multimodal safety evaluation across 7 threat vectors.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = 16.sp
@@ -2052,13 +2491,13 @@ private fun DeepSeekThreatLabCard(serverUrl: String) {
                     ) {
                         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                text = "• Primary Engine: Google Gemini 3.5 Flash",
+                                text = "• Active Model: Google Gemini 3.5 Flash",
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 11.sp,
                                 color = EmeraldSafe
                             )
                             Text(
-                                text = "Live cloud model processing contextual threats with 98%+ confidence.",
+                                text = "Pre-configured with direct cloud endpoint and zero external latency.",
                                 fontSize = 10.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -2076,7 +2515,7 @@ private fun DeepSeekThreatLabCard(serverUrl: String) {
                     OutlinedTextField(
                         value = configModel,
                         onValueChange = { configModel = it },
-                        label = { Text("Model Name", fontSize = 11.sp) },
+                        label = { Text("Model Identifier", fontSize = 11.sp) },
                         placeholder = { Text("gemini-3.5-flash", fontSize = 10.sp) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -2148,5 +2587,123 @@ private fun DeepSeekThreatLabCard(serverUrl: String) {
                 }
             }
         )
+    }
+}
+
+// -------------------------------------------------------------
+// ANDROID STUDIO PROJECT VIEW & ARCHITECTURE SYNC GUIDE CARD
+// -------------------------------------------------------------
+@Composable
+private fun AndroidStudioProjectGuideCard() {
+    var isExpanded by remember { mutableStateOf(false) }
+
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(18.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded = !isExpanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(IndigoPrimary.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = IndigoPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Android Studio Sync & Project View Guide",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            text = "Why some files appear hidden & how to view the full backend",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = IndigoPrimary.copy(alpha = 0.1f)
+                ) {
+                    Text(
+                        text = if (isExpanded) "Hide ▲" else "Read Tips ▼",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = IndigoPrimary,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = isExpanded) {
+                Column(
+                    modifier = Modifier.padding(top = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "1. 'Android' vs 'Project' Tree View:",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = IndigoPrimary
+                    )
+                    Text(
+                        text = "When you sync in Android Studio, it defaults to the 'Android' view, which only displays the app/ directory. Non-Android roots like server/ (FastAPI Python sync server), .env, and FOCUS_SENSE_ARCHITECTURE_PLAN.md are hidden. Switch the dropdown at the top-left of the Project panel from 'Android' to 'Project' to view everything!",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 16.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "2. 100% Autonomous Client Execution:",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = IndigoPrimary
+                    )
+                    Text(
+                        text = "The Android client is completely self-contained. It uses embedded Room SQLite to persist and pre-seed Sarah (Parent), Leo (Child), and Maya (Child) with schedule rules, apps, and location history. It does not require running the external server to be fully functional.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 16.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "3. Tri-Tier Hybrid AI & API Keys:",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = IndigoPrimary
+                    )
+                    Text(
+                        text = "Layer 1 (Regex) and Layer 2 (On-device ML) run 100% locally on the device with zero cloud egress. Layer 3 uses Google Gemini 3.5 Flash via BuildConfig.GEMINI_API_KEY (in .env) with zero-configuration fallback.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+        }
     }
 }

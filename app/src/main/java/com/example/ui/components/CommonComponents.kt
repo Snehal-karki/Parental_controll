@@ -201,7 +201,7 @@ fun FocusSenseTopBar(
 
                     Spacer(modifier = Modifier.width(6.dp))
 
-                    // Role switch button (Locked with PIN if leaving child mode)
+                    // Active Profile Chip (Primary account switching is located in bottom Navigation Bar)
                     Surface(
                         shape = RoundedCornerShape(20.dp),
                         color = Color.White.copy(alpha = 0.15f),
@@ -209,21 +209,21 @@ fun FocusSenseTopBar(
                             .clip(RoundedCornerShape(20.dp))
                             .clickable { onSwitchRoleRequested() }
                             .padding(horizontal = 10.dp, vertical = 6.dp)
-                            .testTag("switch_role_button")
+                            .testTag("top_bar_profile_chip")
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = if (currentUser?.role == "child") Icons.Default.Lock else Icons.Default.SwapHoriz,
-                                contentDescription = "Switch Profile / Role",
+                                imageVector = if (currentUser?.role == "child") Icons.Default.Lock else Icons.Default.Person,
+                                contentDescription = "Active Profile",
                                 tint = Color.White,
                                 modifier = Modifier.size(14.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = if (currentUser?.role == "child") "Parent Exit" else "Switch",
+                                text = currentUser?.name?.take(10) ?: "Profile",
                                 fontSize = 12.sp,
                                 color = Color.White,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
                     }

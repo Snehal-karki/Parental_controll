@@ -258,7 +258,8 @@ fun FocusSenseApp(viewModel: FocusSenseViewModel) {
                     onSyncNow = { viewModel.syncData() },
                     installedApps = installedApps,
                     onToggleAppBlock = { pkg, isBlocked -> viewModel.toggleAppBlock(pkg, isBlocked) },
-                    onRefreshInstalledApps = { viewModel.refreshInstalledApps(context) }
+                    onRefreshInstalledApps = { viewModel.refreshInstalledApps(context) },
+                    onSwitchAccountRequested = { showProfileSwitchDialog = true }
                 )
             } else {
                 ChildDashboardScreen(

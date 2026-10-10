@@ -129,9 +129,9 @@ fun ChildDashboardScreen(
         }
     }
 
-    // Default to the Permission Wizard (Tab 4) if core permissions are missing
+    // Default to the Permission Wizard (Tab 3) if core permissions are missing
     var selectedTab by remember {
-        mutableIntStateOf(if (!permissionStatus.allCrucialGranted) 4 else 0)
+        mutableIntStateOf(if (!permissionStatus.allCrucialGranted) 3 else 0)
     }
 
     Scaffold(
@@ -165,18 +165,11 @@ fun ChildDashboardScreen(
                 NavigationBarItem(
                     selected = selectedTab == 3,
                     onClick = { selectedTab = 3 },
-                    icon = { Icon(Icons.Default.LocationOn, contentDescription = "Safety Beacon") },
-                    label = { Text("Beacon", fontSize = 10.sp) },
-                    modifier = Modifier.testTag("child_tab_beacon")
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 4,
-                    onClick = { selectedTab = 4 },
                     icon = {
                         Box {
                             Icon(
                                 Icons.Default.Shield,
-                                contentDescription = "Permissions",
+                                contentDescription = "Permissions & Safety",
                                 tint = if (permissionStatus.isFullyProtected) EmeraldSafe else CoralDanger
                             )
                             if (!permissionStatus.isFullyProtected) {
@@ -192,13 +185,33 @@ fun ChildDashboardScreen(
                     },
                     label = {
                         Text(
-                            text = if (permissionStatus.isFullyProtected) "Armed" else "Setup",
+                            text = if (permissionStatus.isFullyProtected) "Armed" else "Safety",
                             fontSize = 10.sp,
                             fontWeight = if (!permissionStatus.isFullyProtected) FontWeight.Bold else FontWeight.Normal,
                             color = if (permissionStatus.isFullyProtected) EmeraldSafe else CoralDanger
                         )
                     },
                     modifier = Modifier.testTag("child_tab_permissions")
+                )
+                NavigationBarItem(
+                    selected = false,
+                    onClick = onRequestParentUnlock,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "Parent Unlock / Switch Profile",
+                            tint = PurpleAccent
+                        )
+                    },
+                    label = {
+                        Text(
+                            text = "Exit",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = PurpleAccent
+                        )
+                    },
+                    modifier = Modifier.testTag("child_tab_switch_account")
                 )
             }
         }
@@ -209,12 +222,12 @@ fun ChildDashboardScreen(
                 .padding(innerPadding)
         ) {
             // Persistent Top Warning Banner if permissions are missing and user is on another tab
-            if (selectedTab != 4 && !permissionStatus.isFullyProtected) {
+            if (selectedTab != 3 && !permissionStatus.isFullyProtected) {
                 Surface(
                     color = if (permissionStatus.allCrucialGranted) AmberWarningBg else CoralDangerBg,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { selectedTab = 4 }
+                        .clickable { selectedTab = 3 }
                         .testTag("child_permission_alert_banner")
                 ) {
                     Row(
@@ -268,14 +281,12 @@ fun ChildDashboardScreen(
                         rules = scheduleRules,
                         onLaunchRestrictedApp = onSimulateRestrictedLaunch
                     )
-                    3 -> ChildSafetyBeaconTab(
-                        childName = currentChild?.name ?: "Student",
-                        latestLocation = latestLocation
-                    )
-                    4 -> ChildPermissionWizardScreen(
-                        childName = currentChild?.name ?: "Student",
-                        onContinueToDashboard = { selectedTab = 0 }
-                    )
+                    3 -> Column(modifier = Modifier.fillMaxSize()) {
+                        ChildPermissionWizardScreen(
+                            childName = currentChild?.name ?: "Student",
+                            onContinueToDashboard = { selectedTab = 0 }
+                        )
+                    }
                 }
             }
         }

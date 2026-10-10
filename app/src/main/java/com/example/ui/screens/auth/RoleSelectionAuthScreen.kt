@@ -330,6 +330,72 @@ private fun RolePickerView(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Android Studio Sync Notice & Project View Guide
+        var isStudioTipExpanded by remember { mutableStateOf(false) }
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .clickable { isStudioTipExpanded = !isStudioTipExpanded }
+                .padding(bottom = 6.dp)
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = IndigoPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Syncing with Android Studio? Tap for Tips",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = IndigoPrimary
+                        )
+                    }
+                    Text(
+                        text = if (isStudioTipExpanded) "▲" else "▼",
+                        fontSize = 12.sp,
+                        color = IndigoPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                AnimatedVisibility(visible = isStudioTipExpanded) {
+                    Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "• View all files: In Android Studio's project panel (top-left), switch the view from 'Android' to 'Project' to see the backend server/ folder, .env, and architecture plans.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 15.sp
+                        )
+                        Text(
+                            text = "• Autonomous edge: This Android client has embedded SQLite Room with pre-seeded demo users (Sarah, Leo, Maya) and local ML safety evaluation. It runs 100% offline without needing the external server.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 15.sp
+                        )
+                        Text(
+                            text = "• Quick test: Click 'Parent Dashboard' below to immediately explore the monitoring portal with all pre-loaded features!",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 15.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
         // Instant 1-Click Demo Evaluation Card
         Card(
             shape = RoundedCornerShape(18.dp),
