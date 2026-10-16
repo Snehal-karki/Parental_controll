@@ -42,7 +42,7 @@ DATABASE_URL = os.getenv(
 
 # Gemini Cloud AI Configuration (Primary High-Speed Evaluator)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6JHu_rvvgW0ztX4UQXvhf_c42yy5oeNMaaTpqqQPNbx0A")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
 # DeepSeek Inference Server URL (e.g. vLLM or Ollama instance)
 # Format for vLLM: http://your-gpu-server:8000/v1/chat/completions
@@ -510,67 +510,77 @@ def login_parent(payload: LoginParentRequest, db: Session = Depends(get_db)):
 @app.post("/api/devices/pair", response_model=PairChildResponse)
 def pair_child_device(payload: PairChildRequest, db: Session = Depends(get_db)):
     """Pairs a child's phone using parent credentials."""
-    normalized_email = payload.parent_email.strip().lower()
-    parent = db.query(UserModel).filter(
-        UserModel.email == normalized_email,
-        UserModel.role == "parent"
-    ).first()
+    try:
+        normalized_email = payload.parent_email.strip().lower()
+        parent = db.query(UserModel).filter(
+            UserModel.email == normalized_email,
+            UserModel.role == "parent"
+        ).first()
 
-    if not parent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Parent account not found. Please create the parent account first."
+        if not parent:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Parent account not found. Please create the parent account first."
+            )
+
+        if parent.password_hash != payload.parent_password:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Parent password incorrect. Unable to link child device."
+            )
+
+        # Create new Child Profile in parent's group
+        child_id = f"child-{uuid.uuid4().hex[:8]}"
+        child_clean_name = payload.child_name.strip()
+        child_email = f"{child_clean_name.lower().replace(' ', '')}-{uuid.uuid4().hex[:4]}@family.focussense"
+
+        child = UserModel(
+            user_id=child_id,
+            group_id=parent.group_id,
+            email=child_email,
+            password_hash=parent.password_hash,
+            role="child",
+            name=child_clean_name,
+            pin="",
+            avatar="default_child"
         )
+        db.add(child)
 
-    if parent.password_hash != payload.parent_password:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Parent password incorrect. Unable to link child device."
+        # Register child device
+        device_id = f"dev-{uuid.uuid4().hex[:8]}"
+        dev = DeviceModel(
+            device_id=device_id,
+            user_id=child_id,
+            device_name=payload.device_name.strip() if payload.device_name else f"{child_clean_name}'s Phone",
+            is_online=True,
+            battery_percent=100
         )
+        db.add(dev)
+        db.commit()
 
-    # Create new Child Profile in parent's group
-    child_id = f"child-{uuid.uuid4().hex[:8]}"
-    child_clean_name = payload.child_name.strip()
-    child_email = f"{child_clean_name.lower().replace(' ', '')}-{uuid.uuid4().hex[:4]}@family.focussense"
-
-    child = UserModel(
-        user_id=child_id,
-        group_id=parent.group_id,
-        email=child_email,
-        password_hash=parent.password_hash,
-        role="child",
-        name=child_clean_name,
-        pin="",
-        avatar="default_child"
-    )
-    db.add(child)
-
-    # Register child device
-    device_id = f"dev-{uuid.uuid4().hex[:8]}"
-    dev = DeviceModel(
-        device_id=device_id,
-        user_id=child_id,
-        device_name=payload.device_name.strip() if payload.device_name else f"{child_clean_name}'s Phone",
-        is_online=True,
-        battery_percent=100
-    )
-    db.add(dev)
-    db.commit()
-
-    return PairChildResponse(
-        status="paired",
-        child_user=UserResponse(
-            user_id=child.user_id,
-            group_id=child.group_id,
-            email=child.email,
-            role=child.role,
-            name=child.name,
-            pin=child.pin,
-            avatar=child.avatar
-        ),
-        device_id=device_id,
-        group_id=parent.group_id
-    )
+        return PairChildResponse(
+            status="paired",
+            child_user=UserResponse(
+                user_id=child.user_id,
+                group_id=child.group_id,
+                email=child.email,
+                role=child.role,
+                name=child.name,
+                pin=child.pin,
+                avatar=child.avatar
+            ),
+            device_id=device_id,
+            group_id=parent.group_id
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"[FocusSense Server] Error pairing child device: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Child device pairing failed: {str(e)}"
+        )
 
 # ---------------------------------------------------------------------------
 # 2. Hardware Devices & Presence Management
