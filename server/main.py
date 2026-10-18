@@ -52,10 +52,16 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "sk-b5d4a4fdc7e04c12867ee21f479
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
 # Convert postgres:// or postgresql:// to explicit driver for SQLAlchemy
+try:
+    import psycopg2
+    db_driver = "postgresql+psycopg2://"
+except ImportError:
+    db_driver = "postgresql+pg8000://"
+
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgres://", db_driver, 1)
 elif DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith("postgresql+"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", db_driver, 1)
 
 # CRITICAL IPv4 COMPATIBILITY FOR RENDER & CLOUD CONTAINERS:
 # Direct Supabase domain 'db.<project>.supabase.co' resolves strictly to IPv6.
@@ -71,16 +77,29 @@ if "postgres:%23SKravi240211964" in DATABASE_URL:
 elif "postgres:#SKravi240211964" in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.replace("postgres:#SKravi240211964", "postgres.jlmyesmofptnrthetvpt:%23SKravi240211964")
 
-# Supabase strictly requires SSL connections
-if ("supabase.co" in DATABASE_URL or "supabase.com" in DATABASE_URL) and "sslmode" not in DATABASE_URL:
-    separator = "&" if "?" in DATABASE_URL else "?"
-    DATABASE_URL = f"{DATABASE_URL}{separator}sslmode=require"
+# SSL & connection configuration for pg8000 / psycopg2
+connect_args = {}
+if "sqlite" in DATABASE_URL:
+    connect_args["check_same_thread"] = False
+elif "pg8000" in DATABASE_URL:
+    import ssl
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+    connect_args["ssl_context"] = ssl_ctx
+    # Strip sslmode=require from pg8000 connection string as ssl_context handles it
+    DATABASE_URL = DATABASE_URL.replace("?sslmode=require", "").replace("&sslmode=require", "")
+elif "psycopg2" in DATABASE_URL:
+    if ("supabase.co" in DATABASE_URL or "supabase.com" in DATABASE_URL) and "sslmode" not in DATABASE_URL:
+        separator = "&" if "?" in DATABASE_URL else "?"
+        DATABASE_URL = f"{DATABASE_URL}{separator}sslmode=require"
+    connect_args["connect_timeout"] = 10
 
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,      # Automatically reconnects if connection was dropped by cloud pooler
     pool_recycle=300,        # Recycles connections every 5 minutes to prevent stale sockets
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
+    connect_args=connect_args
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
